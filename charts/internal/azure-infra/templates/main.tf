@@ -78,6 +78,20 @@ resource "azurerm_network_security_group" "workers" {
 #= NAT Gateway
 #===============================================
 
+{{ if or .Values.natGateway.ipAddresses .Values.natGateway.ipAddressRanges -}}
+{{ range $index, $ip := .Values.natGateway.ipAddresses }}
+data "azurerm_public_ip" "nat-ip-{{ $index }}" {
+  name                = "{{ $ip.name }}"
+  resource_group_name = "{{ $ip.resourceGroup }}"
+}
+{{- end }}
+{{ range $index, $ip := .Values.natGateway.ipAddressRanges }}
+data "azurerm_public_ip_prefix" "nat-iprange-prefix-{{ $index }}" {
+  name                = "{{ $ip.name }}"
+  resource_group_name = "{{ $ip.resourceGroup }}"
+}
+{{- end }}
+{{ else -}}
 resource "azurerm_public_ip" "natip" {
   name                = "{{ required "clusterName is required" .Values.clusterName }}-nat-ip"
   location            = "{{ required "azure.region is required" .Values.azure.region }}"
@@ -89,6 +103,7 @@ resource "azurerm_public_ip" "natip" {
   allocation_method   = "Static"
   sku                 = "Standard"
 }
+{{- end }}
 
 resource "azurerm_nat_gateway" "nat" {
   name                    = "{{ required "clusterName is required" .Values.clusterName }}-nat-gateway"
@@ -99,11 +114,15 @@ resource "azurerm_nat_gateway" "nat" {
   resource_group_name     = data.azurerm_resource_group.rg.name
   {{- end }}
   sku_name                = "Standard"
-  public_ip_address_ids   = [azurerm_public_ip.natip.id]
-  {{- if .Values.natGateway }}
-  {{- if .Values.natGateway.idleConnectionTimeoutMinutes }}
+  {{ if .Values.natGateway.idleConnectionTimeoutMinutes -}}
   idle_timeout_in_minutes = {{ .Values.natGateway.idleConnectionTimeoutMinutes }}
-  {{- end }}
+  {{ end -}}
+
+  {{- if or .Values.natGateway.ipAddresses .Values.natGateway.ipAddressRanges -}}
+  public_ip_address_ids   = [{{range $index, $ip := .Values.natGateway.ipAddresses}}{{if $index}},{{end}}data.azurerm_public_ip.nat-ip-{{ $index }}.id{{end}}]
+  public_ip_prefix_ids    = [{{range $index, $ipRange := .Values.natGateway.ipAddressRanges}}{{if $index}},{{end}}data.azurerm_public_ip_prefix.nat-iprange-prefix-{{ $index }}.id{{end}}]
+  {{- else -}}
+  public_ip_address_ids   = [azurerm_public_ip.natip.id]
   {{- end }}
 }
 

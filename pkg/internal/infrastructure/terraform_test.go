@@ -144,8 +144,8 @@ var _ = Describe("Terraform", func() {
 			expectedCreateValues        map[string]interface{}
 			expectedOutputKeysValues    map[string]interface{}
 			expectedResourceGroupValues map[string]interface{}
-			expectedIdentityValues      map[string]interface{}
 			expectedNatGatewayValues    map[string]interface{}
+			expectedIdentityValues      map[string]interface{}
 		)
 
 		BeforeEach(func() {
@@ -326,6 +326,42 @@ var _ = Describe("Terraform", func() {
 				}
 				expectedCreateValues["natGateway"] = true
 				expectedNatGatewayValues["idleConnectionTimeoutMinutes"] = timeout
+				values, err := ComputeTerraformerChartValues(infra, clientAuth, config, cluster)
+				Expect(err).To(Not(HaveOccurred()))
+				Expect(values).To(BeEquivalentTo(expectedValues))
+			})
+
+			It("should correctly compute terraform chart values with NatGateway with user assigned ip/ipranges", func() {
+				var (
+					ipName               = "test-ip-name"
+					ipResourceGroup      = "test-ip-rg"
+					ipRangeName          = "test-ip-range-name"
+					ipRangeResourceGroup = "test-ip-range-rg"
+				)
+				config.Networks.NatGateway = &api.NatGatewayConfig{
+					Enabled: true,
+					IPAddresses: []api.AzureResourceReference{{
+						Name:          ipName,
+						ResourceGroup: ipResourceGroup,
+					}},
+					IPAddressRanges: []api.AzureResourceReference{{
+						Name:          ipRangeName,
+						ResourceGroup: ipRangeResourceGroup,
+					}},
+				}
+
+				expectedCreateValues["natGateway"] = true
+				natGatewayValues := map[string]interface{}{
+					"ipAddresses": []map[string]interface{}{{
+						"name":          ipName,
+						"resourceGroup": ipResourceGroup,
+					}},
+					"ipAddressRanges": []map[string]interface{}{{
+						"name":          ipRangeName,
+						"resourceGroup": ipRangeResourceGroup,
+					}},
+				}
+				expectedValues["natGateway"] = natGatewayValues
 				values, err := ComputeTerraformerChartValues(infra, clientAuth, config, cluster)
 				Expect(err).To(Not(HaveOccurred()))
 				Expect(values).To(BeEquivalentTo(expectedValues))

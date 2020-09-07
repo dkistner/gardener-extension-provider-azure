@@ -37,6 +37,14 @@ type InfrastructureConfig struct {
 	Zoned bool `json:"zoned,omitempty"`
 }
 
+// AzureResourceReference contains information to identify a generic Azure resource.
+type AzureResourceReference struct {
+	// Name is the name of the referenced Azure resource.
+	Name string `json:"name"`
+	// ResourceGroup is the resource group which contain the referenced Azure resource.
+	ResourceGroup string `json:"resourceGroup"`
+}
+
 // ResourceGroup is azure resource group
 type ResourceGroup struct {
 	// Name is the name of the resource group
@@ -168,6 +176,12 @@ type NatGatewayConfig struct {
 	// IdleConnectionTimeoutMinutes specifies the idle connection timeout limit for NAT gateway in minutes.
 	// +optional
 	IdleConnectionTimeoutMinutes *int32 `json:"idleConnectionTimeoutMinutes,omitempty"`
+	// IPAddresses is a list of ip addresses which should be assigned to the NAT gateway.
+	// +optional
+	IPAddresses []AzureResourceReference `json:"ipAddresses,omitempty"`
+	// IPAddressRanges is a list of ip address ranges/prefixes which should be assigned to the NAT gateway.
+	// +optional
+	IPAddressRanges []AzureResourceReference `json:"ipAddressRanges,omitempty"`
 }
 
 // IdentityConfig contains configuration for the managed identity.

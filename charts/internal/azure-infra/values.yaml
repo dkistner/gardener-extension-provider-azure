@@ -15,6 +15,19 @@ create:
   # name: identity-name
   # resourceGroup: identity-resource-group
 
+natGateway:
+  idleConnectionTimeoutMinutes:
+  # ipAddresses:
+  # - name: ip-name
+  #   resourceGroup: ip-resource-group
+  # - name: ip-name
+  #   resourceGroup: ip-resource-group
+  # ipAddressRanges:
+  # - name: ip-range-name
+  #   resourceGroup: ip-range-resource-group
+  # - name: ip-range-nameq
+  #   resourceGroup: ip-range-resource-group
+
 resourceGroup:
   name: my-resource-group
   vnet:
@@ -42,7 +55,3 @@ outputKeys:
   securityGroupName: securityGroupName
   # identityID: managedIdentityID
   # identityClientID: managedIdentityClientID
-
-natGateway:
-  idleConnectionTimeoutMinutes:
-

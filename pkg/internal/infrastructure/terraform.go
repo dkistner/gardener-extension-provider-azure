@@ -79,8 +79,9 @@ func ComputeTerraformerChartValues(infra *extensionsv1alpha1.Infrastructure, cli
 		createNatGateway      = false
 		resourceGroupName     = infra.Namespace
 
-		identityConfig map[string]interface{}
-		azure          = map[string]interface{}{
+		identityConfig   map[string]interface{}
+		natGatewayConfig map[string]interface{}
+		azure            = map[string]interface{}{
 			"subscriptionID": clientAuth.SubscriptionID,
 			"tenantID":       clientAuth.TenantID,
 			"region":         infra.Spec.Region,
@@ -95,7 +96,6 @@ func ComputeTerraformerChartValues(infra *extensionsv1alpha1.Infrastructure, cli
 			"routeTableName":    TerraformerOutputKeyRouteTableName,
 			"securityGroupName": TerraformerOutputKeySecurityGroupName,
 		}
-		natGatewayConfig = map[string]interface{}{}
 	)
 	// check if we should use an existing ResourceGroup or create a new one
 	if config.ResourceGroup != nil {
@@ -133,11 +133,9 @@ func ComputeTerraformerChartValues(infra *extensionsv1alpha1.Infrastructure, cli
 		azure["countUpdateDomains"] = count.updateDomains
 	}
 
-	if config.Networks.NatGateway != nil && config.Networks.NatGateway.Enabled {
+	if natGatewayValues := getNatGatewayValues(config.Networks.NatGateway); natGatewayValues != nil {
 		createNatGateway = true
-		if config.Networks.NatGateway.IdleConnectionTimeoutMinutes != nil {
-			natGatewayConfig["idleConnectionTimeoutMinutes"] = *config.Networks.NatGateway.IdleConnectionTimeoutMinutes
-		}
+		natGatewayConfig = natGatewayValues
 	}
 
 	if config.Identity != nil && config.Identity.Name != "" && config.Identity.ResourceGroup != "" {
@@ -164,14 +162,50 @@ func ComputeTerraformerChartValues(infra *extensionsv1alpha1.Infrastructure, cli
 				"serviceEndpoints": config.Networks.ServiceEndpoints,
 			},
 		},
+		"natGateway":  natGatewayConfig,
 		"clusterName": infra.Namespace,
 		"networks": map[string]interface{}{
 			"worker": config.Networks.Workers,
 		},
 		"identity":   identityConfig,
-		"natGateway": natGatewayConfig,
 		"outputKeys": outputKeys,
 	}, nil
+}
+
+func getNatGatewayValues(natGatewayConfig *api.NatGatewayConfig) map[string]interface{} {
+	if natGatewayConfig == nil || !natGatewayConfig.Enabled {
+		return nil
+	}
+
+	var values = map[string]interface{}{}
+	if natGatewayConfig.IdleConnectionTimeoutMinutes != nil {
+		values["idleConnectionTimeoutMinutes"] = *natGatewayConfig.IdleConnectionTimeoutMinutes
+	}
+
+	if ipAddresses := resourceReferencesToValue(natGatewayConfig.IPAddresses); ipAddresses != nil {
+		values["ipAddresses"] = ipAddresses
+	}
+
+	if ipAddressRanges := resourceReferencesToValue(natGatewayConfig.IPAddressRanges); ipAddressRanges != nil {
+		values["ipAddressRanges"] = ipAddressRanges
+	}
+
+	return values
+}
+
+func resourceReferencesToValue(references []api.AzureResourceReference) []map[string]interface{} {
+	var count = len(references)
+	if count == 0 {
+		return nil
+	}
+	var result = make([]map[string]interface{}, count)
+	for i, ref := range references {
+		result[i] = map[string]interface{}{
+			"name":          ref.Name,
+			"resourceGroup": ref.ResourceGroup,
+		}
+	}
+	return result
 }
 
 // RenderTerraformerChart renders the azure-infra chart with the given values.

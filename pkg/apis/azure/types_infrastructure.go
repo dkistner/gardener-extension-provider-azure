@@ -33,6 +33,14 @@ type InfrastructureConfig struct {
 	Zoned bool
 }
 
+// AzureResourceReference contains information to identify a generic Azure resource.
+type AzureResourceReference struct {
+	// Name is the name of the referenced Azure resource.
+	Name string
+	// ResourceGroup is the resource group which contain the referenced Azure resource.
+	ResourceGroup string
+}
+
 // ResourceGroup is azure resource group
 type ResourceGroup struct {
 	// Name is the name of the resource group
@@ -152,6 +160,10 @@ type NatGatewayConfig struct {
 	Enabled bool
 	// IdleConnectionTimeoutMinutes specifies the idle connection timeout limit for NAT gateway in minutes.
 	IdleConnectionTimeoutMinutes *int32
+	// IPAddresses is a list of ip addresses which should be assigned to the NAT gateway.
+	IPAddresses []AzureResourceReference
+	// IPAddressRanges is a list of ip address ranges/prefixes which should be assigned to the NAT gateway.
+	IPAddressRanges []AzureResourceReference
 }
 
 // IdentityConfig contains configuration for the managed identity.
