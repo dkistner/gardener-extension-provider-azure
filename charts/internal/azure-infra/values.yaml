@@ -15,6 +15,11 @@ create:
   # name: identity-name
   # resourceGroup: identity-resource-group
 
+natGateway:
+  idleConnectionTimeoutMinutes:
+  # TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+  migrateNatGatewayToIPAssociation: false
+
 resourceGroup:
   name: my-resource-group
   vnet:
@@ -42,7 +47,7 @@ outputKeys:
   securityGroupName: securityGroupName
   # identityID: managedIdentityID
   # identityClientID: managedIdentityClientID
+  # TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+  migrateNatGatewayToIPAssociation: migrateNatGatewayToIPAssociation
 
-natGateway:
-  idleConnectionTimeoutMinutes:
 

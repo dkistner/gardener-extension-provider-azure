@@ -61,6 +61,10 @@ const (
 	TerraformerOutputKeyIdentityID = "identityID"
 	// TerraformerOutputKeyIdentityClientID is the key for the identityClientID output
 	TerraformerOutputKeyIdentityClientID = "identityClientID"
+
+	// TerraformerOutputKeyNatGatewayIPMigrated is the key for the migrateNatGatewayToIPAssociation output
+	// TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+	TerraformerOutputKeyNatGatewayIPMigrated = "migrateNatGatewayToIPAssociation"
 )
 
 // StatusTypeMeta is the TypeMeta of the Azure InfrastructureStatus
@@ -138,6 +142,14 @@ func ComputeTerraformerChartValues(infra *extensionsv1alpha1.Infrastructure, cli
 		if config.Networks.NatGateway.IdleConnectionTimeoutMinutes != nil {
 			natGatewayConfig["idleConnectionTimeoutMinutes"] = *config.Networks.NatGateway.IdleConnectionTimeoutMinutes
 		}
+	}
+
+	// Checks if the Gardener managed NatGateway public ip needs to be migrated.
+	// TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+	if natGatewayIPMigrationRequired, err := natGatewayPublicIPMigrationRequired(infra, config); err != nil {
+		return nil, err
+	} else if natGatewayIPMigrationRequired {
+		natGatewayConfig["migrateNatGatewayToIPAssociation"] = true
 	}
 
 	if config.Identity != nil && config.Identity.Name != "" && config.Identity.ResourceGroup != "" {
@@ -227,10 +239,13 @@ type TerraformState struct {
 	IdentityID string
 	// IdentityClientID is the client id of the identity.
 	IdentityClientID string
+	// NatGatewayIPMigrated is the indicator if the nat gateway ip is migrated.
+	// TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+	NatGatewayIPMigrated string
 }
 
 // ExtractTerraformState extracts the TerraformState from the given Terraformer.
-func ExtractTerraformState(tf terraformer.Terraformer, config *api.InfrastructureConfig) (*TerraformState, error) {
+func ExtractTerraformState(tf terraformer.Terraformer, infra *extensionsv1alpha1.Infrastructure, config *api.InfrastructureConfig) (*TerraformState, error) {
 	var outputKeys = []string{
 		TerraformerOutputKeyResourceGroupName,
 		TerraformerOutputKeyRouteTableName,
@@ -250,6 +265,15 @@ func ExtractTerraformState(tf terraformer.Terraformer, config *api.Infrastructur
 
 	if config.Identity != nil && config.Identity.Name != "" && config.Identity.ResourceGroup != "" {
 		outputKeys = append(outputKeys, TerraformerOutputKeyIdentityID, TerraformerOutputKeyIdentityClientID)
+	}
+
+	// TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+	natGatewayIPMigrationRequired, err := natGatewayPublicIPMigrationRequired(infra, config)
+	if err != nil {
+		return nil, err
+	}
+	if natGatewayIPMigrationRequired {
+		outputKeys = append(outputKeys, TerraformerOutputKeyNatGatewayIPMigrated)
 	}
 
 	vars, err := tf.GetStateOutputVariables(outputKeys...)
@@ -287,6 +311,11 @@ func ExtractTerraformState(tf terraformer.Terraformer, config *api.Infrastructur
 	if config.Identity != nil && config.Identity.Name != "" && config.Identity.ResourceGroup != "" {
 		tfState.IdentityID = vars[TerraformerOutputKeyIdentityID]
 		tfState.IdentityClientID = vars[TerraformerOutputKeyIdentityClientID]
+	}
+
+	// TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+	if natGatewayIPMigrationRequired {
+		tfState.NatGatewayIPMigrated = vars[TerraformerOutputKeyNatGatewayIPMigrated]
 	}
 
 	return &tfState, nil
@@ -344,12 +373,17 @@ func StatusFromTerraformState(state *TerraformState) *apiv1alpha1.Infrastructure
 		})
 	}
 
+	// TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+	if state.NatGatewayIPMigrated == "true" {
+		tfState.NatGatewayPublicIPMigrated = true
+	}
+
 	return &tfState
 }
 
 // ComputeStatus computes the status based on the Terraformer and the given InfrastructureConfig.
-func ComputeStatus(tf terraformer.Terraformer, config *api.InfrastructureConfig) (*apiv1alpha1.InfrastructureStatus, error) {
-	state, err := ExtractTerraformState(tf, config)
+func ComputeStatus(tf terraformer.Terraformer, infra *extensionsv1alpha1.Infrastructure, config *api.InfrastructureConfig) (*apiv1alpha1.InfrastructureStatus, error) {
+	state, err := ExtractTerraformState(tf, infra, config)
 	if err != nil {
 		return nil, err
 	}
@@ -417,4 +451,25 @@ func findDomainCounts(cluster *controller.Cluster, infra *extensionsv1alpha1.Inf
 		faultDomains:  *faultDomainCount,
 		updateDomains: *updateDomainCount,
 	}, nil
+}
+
+// natGatewayPublicIPMigrationRequired checks if the Gardener managed NatGateway public ip needs to be migrated.
+// TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+func natGatewayPublicIPMigrationRequired(infra *extensionsv1alpha1.Infrastructure, config *api.InfrastructureConfig) (bool, error) {
+	if config.Networks.NatGateway == nil || config.Networks.NatGateway.Enabled {
+		return false, nil
+	}
+
+	// Check if the natgateway ip is already migrated.
+	if infra.Status.ProviderStatus != nil {
+		infrastructureStatus, err := helper.InfrastructureStatusFromInfrastructure(infra)
+		if err != nil {
+			return false, err
+		}
+		if infrastructureStatus.NatGatewayPublicIPMigrated {
+			return false, nil
+		}
+	}
+
+	return true, nil
 }

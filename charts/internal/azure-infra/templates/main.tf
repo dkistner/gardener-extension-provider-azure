@@ -99,12 +99,20 @@ resource "azurerm_nat_gateway" "nat" {
   resource_group_name     = data.azurerm_resource_group.rg.name
   {{- end }}
   sku_name                = "Standard"
-  public_ip_address_ids   = [azurerm_public_ip.natip.id]
-  {{- if .Values.natGateway }}
-  {{- if .Values.natGateway.idleConnectionTimeoutMinutes }}
+  {{ if .Values.natGateway -}}
+  {{ if .Values.natGateway.idleConnectionTimeoutMinutes -}}
   idle_timeout_in_minutes = {{ .Values.natGateway.idleConnectionTimeoutMinutes }}
   {{- end }}
+  {{ if .Values.natGateway.migrateNatGatewayToIPAssociation -}}
+  # TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+  public_ip_address_ids   = []
   {{- end }}
+  {{- end }}
+}
+
+resource "azurerm_nat_gateway_public_ip_association" "natip-association" {
+  nat_gateway_id       = azurerm_nat_gateway.nat.id
+  public_ip_address_id = azurerm_public_ip.natip.id
 }
 
 resource "azurerm_subnet_nat_gateway_association" "nat-worker-subnet-association" {
@@ -205,5 +213,12 @@ output "{{ .Values.outputKeys.identityID }}" {
 
 output "{{ .Values.outputKeys.identityClientID }}" {
   value = data.azurerm_user_assigned_identity.identity.client_id
+}
+{{- end }}
+
+{{ if .Values.natGateway.migrateNatGatewayToIPAssociation -}}
+# TODO(natipmigration) This can be removed in future versions when the ip migration is done.
+output "{{ .Values.outputKeys.migrateNatGatewayToIPAssociation }}" {
+  value = true
 }
 {{- end }}
