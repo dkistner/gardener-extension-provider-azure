@@ -20,6 +20,7 @@ import (
 	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/imagevector"
 	extensionscontroller "github.com/gardener/gardener/extensions/pkg/controller"
 	"github.com/gardener/gardener/extensions/pkg/controller/common"
@@ -96,6 +97,8 @@ type workerDelegate struct {
 	machineClasses     []map[string]interface{}
 	machineDeployments worker.MachineDeployments
 	machineImages      []api.MachineImage
+
+	azureClients *internal.AzureClients
 }
 
 // NewWorkerDelegate creates a new context for a worker reconciliation.
@@ -112,6 +115,12 @@ func NewWorkerDelegate(
 	if err != nil {
 		return nil, err
 	}
+
+	azureClients, err := internal.GetAzureClients(context.TODO, w.Client(), worker.Spec.SecretRef)
+	if err != nil {
+		return nil, err
+	}
+
 	return &workerDelegate{
 		ClientContext: clientContext,
 
@@ -121,5 +130,7 @@ func NewWorkerDelegate(
 		cloudProfileConfig: config,
 		cluster:            cluster,
 		worker:             worker,
+
+		azureClients: azureClients,
 	}, nil
 }
