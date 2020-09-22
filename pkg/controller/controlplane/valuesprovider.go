@@ -502,13 +502,15 @@ func getConfigChartValues(
 		values["vnetResourceGroup"] = *infraStatus.Networks.VNet.ResourceGroup
 	}
 
-	// Add AvailabilitySet config if the cluster is not zoned.
-	if !infraStatus.Zoned {
-		nodesAvailabilitySet, err := azureapihelper.FindAvailabilitySetByPurpose(infraStatus.AvailabilitySets, apisazure.PurposeNodes)
-		if err != nil {
-			return nil, errors.Wrapf(err, "could not determine availability set for purpose 'nodes'")
+	// Check if the primary AvailabilitySet needs to be added to the cloudprovider config.
+	var primaryAvSet *apisazure.AvailabilitySet
+	for _, avSet := range infraStatus.AvailabilitySets {
+		if avSet.Purpose == apisazure.PurposeNodes {
+			primaryAvSet = &avSet
 		}
-		values["availabilitySetName"] = nodesAvailabilitySet.Name
+	}
+	if primaryAvSet != nil {
+		values["availabilitySetName"] = primaryAvSet.Name
 	}
 
 	if infraStatus.Identity != nil && infraStatus.Identity.ACRAccess {

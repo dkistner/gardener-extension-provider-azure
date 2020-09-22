@@ -19,7 +19,7 @@ package worker
 import (
 	"context"
 
-	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	azureapi "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/v1alpha1"
 	"github.com/gardener/gardener/extensions/pkg/controller"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
@@ -29,21 +29,29 @@ import (
 	"k8s.io/client-go/util/retry"
 )
 
-func (w *workerDelegate) decodeWorkerProviderStatus() (*api.WorkerStatus, error) {
-	workerStatus := &api.WorkerStatus{}
+// TODO(vmo) Tests
 
+func (w *workerDelegate) decodeAzureInfrastructureStatus() (*azureapi.InfrastructureStatus, error) {
+	infrastructureStatus := &azureapi.InfrastructureStatus{}
+	if _, _, err := w.Decoder().Decode(w.worker.Spec.InfrastructureProviderStatus.Raw, nil, infrastructureStatus); err != nil {
+		return nil, err
+	}
+	return infrastructureStatus, nil
+}
+
+func (w *workerDelegate) decodeWorkerProviderStatus() (*azureapi.WorkerStatus, error) {
+	var workerStatus = &azureapi.WorkerStatus{}
 	if w.worker.Status.ProviderStatus == nil {
 		return workerStatus, nil
 	}
 
 	if _, _, err := w.Decoder().Decode(w.worker.Status.ProviderStatus.Raw, nil, workerStatus); err != nil {
-		return nil, errors.Wrapf(err, "could not decode WorkerStatus '%s'", kutil.ObjectName(w.worker))
+		return nil, errors.Wrapf(err, "could not decode worker status of worker '%s'", kutil.ObjectName(w.worker))
 	}
-
 	return workerStatus, nil
 }
 
-func (w *workerDelegate) updateWorkerProviderStatus(ctx context.Context, workerStatus *api.WorkerStatus) error {
+func (w *workerDelegate) updateWorkerProviderStatus(ctx context.Context, workerStatus *azureapi.WorkerStatus) error {
 	var workerStatusV1alpha1 = &v1alpha1.WorkerStatus{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: v1alpha1.SchemeGroupVersion.String(),

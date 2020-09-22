@@ -102,21 +102,13 @@ type workerDelegate struct {
 }
 
 // NewWorkerDelegate creates a new context for a worker reconciliation.
-func NewWorkerDelegate(
-	clientContext common.ClientContext,
-
-	seedChartApplier gardener.ChartApplier,
-	serverVersion string,
-
-	worker *extensionsv1alpha1.Worker,
-	cluster *extensionscontroller.Cluster,
-) (genericactuator.WorkerDelegate, error) {
+func NewWorkerDelegate(clientContext common.ClientContext, seedChartApplier gardener.ChartApplier, serverVersion string, worker *extensionsv1alpha1.Worker, cluster *extensionscontroller.Cluster) (genericactuator.WorkerDelegate, error) {
 	config, err := helper.CloudProfileConfigFromCluster(cluster)
 	if err != nil {
 		return nil, err
 	}
 
-	azureClients, err := internal.GetAzureClients(context.TODO, w.Client(), worker.Spec.SecretRef)
+	azureClients, err := internal.GetAzureClients(context.TODO(), clientContext.Client(), worker.Spec.SecretRef)
 	if err != nil {
 		return nil, err
 	}

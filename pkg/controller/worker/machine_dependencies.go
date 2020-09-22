@@ -1,27 +1,67 @@
-// Copyright (c) 2020 SAP SE or an SAP affiliate company. All rights reserved. This file is licensed under the Apache Software License, v. 2 except as noted otherwise in the LICENSE file
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package worker
 
-import "context"
+import (
+	"context"
 
-// DeployMachineDependencies is a hook to create external machine dependencies.
-func (w *workerDelegate) DeployMachineDependencies(_ context.Context) error {
+	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	"github.com/pkg/errors"
+
+	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machineset"
+)
+
+func (w *workerDelegate) DeployMachineDependencies(ctx context.Context) error {
+	infrastructureStatus, err := w.decodeAzureInfrastructureStatus()
+	if err != nil {
+		return err
+	}
+
+	workerProviderStatus, err := w.decodeWorkerProviderStatus()
+	if err != nil {
+		return err
+	}
+
+	if machineset.IsVMORequired(infrastructureStatus) {
+		newVmoDependencies, err := w.reconcileVmoDependencies(ctx, infrastructureStatus, workerProviderStatus)
+		if err != nil {
+			return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, err)
+		}
+		return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, nil)
+	}
 	return nil
 }
 
-// CleanupMachineDependencies is a hook to cleanup external machine dependencies.
-func (w *workerDelegate) CleanupMachineDependencies(_ context.Context) error {
+func (w *workerDelegate) CleanupMachineDependencies(ctx context.Context) error {
+	infrastructureStatus, err := w.decodeAzureInfrastructureStatus()
+	if err != nil {
+		return err
+	}
+
+	workerProviderStatus, err := w.decodeWorkerProviderStatus()
+	if err != nil {
+		return err
+	}
+
+	if machineset.IsVMORequired(infrastructureStatus) {
+		newVmoDependencies, err := w.cleanupVmoDependencies(ctx, infrastructureStatus, workerProviderStatus)
+		if err != nil {
+			return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, err)
+		}
+		return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, nil)
+	}
+
+	return nil
+}
+
+// Helper
+
+func (w workerDelegate) updateMachineDependenciesStatus(ctx context.Context, workerStatus *api.WorkerStatus, vmoDependencies []api.VmoDependency, err error) error {
+	workerStatus.VmoDependencies = vmoDependencies
+
+	if statusUpdateErr := w.updateWorkerProviderStatus(ctx, workerStatus); statusUpdateErr != nil {
+		err = errors.Wrapf(statusUpdateErr, err.Error())
+	}
+	if err != nil {
+		return err
+	}
 	return nil
 }

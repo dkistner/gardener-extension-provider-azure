@@ -30,6 +30,9 @@ type WorkerStatus struct {
 	// resources that are still using this version. Hence, it stores the used versions in the provider status to ensure
 	// reconciliation is possible.
 	MachineImages []MachineImage
+
+	// VmoDependencies is a list of external VirtualMachineScaleSet Orchestration Mode VM (VMO) dependencies.
+	VmoDependencies []VmoDependency
 }
 
 // MachineImage is a mapping from logical names and versions to provider-specific machine image data.
@@ -44,4 +47,11 @@ type MachineImage struct {
 	ID *string
 	// AcceleratedNetworking is an indicator if the image supports Azure accelerated networking.
 	AcceleratedNetworking *bool
+}
+
+// VmoDependency is dependency reference for a workerpool to a VirtualMachineScaleSet Orchestration Mode VM (VMO).
+type VmoDependency struct {
+	PoolName string `json:"poolName"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
 }
