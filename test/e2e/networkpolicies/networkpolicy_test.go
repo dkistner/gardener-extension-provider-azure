@@ -475,24 +475,6 @@ var _ = Describe("Network Policy Testing", func() {
 			Port: networkpolicies.Port{
 				Port: 10259,
 				Name: ""}}
-		KubeStateMetricsSeed = &networkpolicies.SourcePod{
-			Pod: networkpolicies.Pod{
-				Name: "kube-state-metrics-seed",
-				Labels: labels.Set{
-					"component":               "kube-state-metrics",
-					"garden.sapcloud.io/role": "monitoring",
-					"type":                    "seed"},
-				ShootVersionConstraint: "",
-				SeedClusterConstraints: sets.String(nil)},
-			Ports: []networkpolicies.Port{
-				networkpolicies.Port{
-					Port: 8080,
-					Name: ""}},
-			ExpectedPolicies: sets.String{
-				"allow-from-prometheus":   sets.Empty{},
-				"allow-to-dns":            sets.Empty{},
-				"allow-to-seed-apiserver": sets.Empty{},
-				"deny-all":                sets.Empty{}}}
 		KubeStateMetricsSeed8080 = &networkpolicies.TargetPod{
 			Pod: networkpolicies.Pod{
 				Name: "kube-state-metrics-seed",
@@ -782,7 +764,6 @@ var _ = Describe("Network Policy Testing", func() {
 			KubeControllerManagerHttps,
 			KubeSchedulerHttp,
 			KubeSchedulerHttps,
-			KubeStateMetricsSeed,
 			KubeStateMetricsShoot,
 			MachineControllerManager,
 			Prometheus,
@@ -952,7 +933,6 @@ var _ = Describe("Network Policy Testing", func() {
 		DefaultCIt(`kube-scheduler-http`, assertHasNetworkPolicy(KubeSchedulerHttp))
 		DefaultCIt(`kube-scheduler-https`, assertHasNetworkPolicy(KubeSchedulerHttps))
 		DefaultCIt(`kube-state-metrics-shoot`, assertHasNetworkPolicy(KubeStateMetricsShoot))
-		DefaultCIt(`kube-state-metrics-seed`, assertHasNetworkPolicy(KubeStateMetricsSeed))
 		DefaultCIt(`machine-controller-manager`, assertHasNetworkPolicy(MachineControllerManager))
 		DefaultCIt(`prometheus`, assertHasNetworkPolicy(Prometheus))
 	})
@@ -1008,7 +988,6 @@ var _ = Describe("Network Policy Testing", func() {
 		DefaultCIt(`should block connectivity from kube-scheduler-http to busybox`, assertBlockEgresss(KubeSchedulerHttp))
 		DefaultCIt(`should block connectivity from kube-scheduler-https to busybox`, assertBlockEgresss(KubeSchedulerHttps))
 		DefaultCIt(`should block connectivity from kube-state-metrics-shoot to busybox`, assertBlockEgresss(KubeStateMetricsShoot))
-		DefaultCIt(`should block connectivity from kube-state-metrics-seed to busybox`, assertBlockEgresss(KubeStateMetricsSeed))
 		DefaultCIt(`should block connectivity from machine-controller-manager to busybox`, assertBlockEgresss(MachineControllerManager))
 		DefaultCIt(`should block connectivity from prometheus to busybox`, assertBlockEgresss(Prometheus))
 	})
@@ -1036,7 +1015,6 @@ var _ = Describe("Network Policy Testing", func() {
 		DefaultCIt(`should block connectivity from kube-scheduler-http`, assertBlockToSeedNodes(KubeSchedulerHttp))
 		DefaultCIt(`should block connectivity from kube-scheduler-https`, assertBlockToSeedNodes(KubeSchedulerHttps))
 		DefaultCIt(`should block connectivity from kube-state-metrics-shoot`, assertBlockToSeedNodes(KubeStateMetricsShoot))
-		DefaultCIt(`should block connectivity from kube-state-metrics-seed`, assertBlockToSeedNodes(KubeStateMetricsSeed))
 		DefaultCIt(`should block connectivity from machine-controller-manager`, assertBlockToSeedNodes(MachineControllerManager))
 		DefaultCIt(`should block connectivity from prometheus`, assertBlockToSeedNodes(Prometheus))
 	})
@@ -1400,10 +1378,6 @@ var _ = Describe("Network Policy Testing", func() {
 		})
 
 		Context("kube-state-metrics-seed", func() {
-
-			BeforeEach(func() {
-				from = networkpolicies.NewNamespacedSourcePod(KubeStateMetricsSeed, sharedResources.Mirror)
-			})
 
 			DefaultCIt(`should block connection to Pod "gardener-resource-manager" at port 8080`, assertEgresssToMirroredPod(GardenerResourceManager8080, false))
 			DefaultCIt(`should block connection to Pod "cloud-controller-manager-http" at port 10253`, assertEgresssToMirroredPod(CloudControllerManagerHttp10253, false))

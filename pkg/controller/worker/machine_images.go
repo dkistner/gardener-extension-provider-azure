@@ -20,19 +20,21 @@ import (
 	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/v1alpha1"
+	"github.com/gardener/gardener/extensions/pkg/controller"
 	"github.com/gardener/gardener/extensions/pkg/controller/worker"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/retry"
 )
 
-// GetMachineImages returns the used machine images for the `Worker` resource.
-func (w *workerDelegate) GetMachineImages(ctx context.Context) (runtime.Object, error) {
+// UpdateMachineImagesStatus stores the used machine images for the `Worker` resource in the worker-provider-status.
+func (w *workerDelegate) UpdateMachineImagesStatus(ctx context.Context) error {
 	if w.machineImages == nil {
 		if err := w.generateMachineConfig(ctx); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -54,10 +56,13 @@ func (w *workerDelegate) GetMachineImages(ctx context.Context) (runtime.Object, 
 	)
 
 	if err := w.Scheme().Convert(workerStatus, workerStatusV1alpha1, nil); err != nil {
-		return nil, err
+		return err
 	}
 
-	return workerStatusV1alpha1, nil
+	return controller.TryUpdateStatus(ctx, retry.DefaultBackoff, w.Client(), w.worker, func() error {
+		w.worker.Status.ProviderStatus = &runtime.RawExtension{Object: workerStatusV1alpha1}
+		return nil
+	})
 }
 
 func (w *workerDelegate) findMachineImage(name, version string) (urn, id *string, acceleratedNetworking *bool, err error) {
