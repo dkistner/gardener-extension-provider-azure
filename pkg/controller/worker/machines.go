@@ -26,7 +26,7 @@ import (
 	azureapihelper "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
-	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machineset"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machinesetclient"
 
 	"github.com/gardener/gardener/extensions/pkg/controller/worker"
 	genericworkeractuator "github.com/gardener/gardener/extensions/pkg/controller/worker/genericactuator"
@@ -125,7 +125,7 @@ func (w *workerDelegate) generateMachineConfig(ctx context.Context) error {
 		return err
 	}
 
-	var vmoRequired = machineset.IsVMORequired(infrastructureStatus)
+	var vmoRequired = machinesetclient.IsVMORequired(infrastructureStatus)
 
 	for _, pool := range w.worker.Spec.Pools {
 		// Get the vmo dependency from the worker status if exists.
@@ -414,12 +414,14 @@ func (w *workerDelegate) generateWorkerPoolHash(pool extensionsv1alpha1.WorkerPo
 func determineWorkerPoolVmoDependency(workerStatus *azureapi.WorkerStatus, poolName string) (*azureapi.VmoDependency, error) {
 	var dependency *azureapi.VmoDependency
 	for _, dep := range workerStatus.VmoDependencies {
-		if dep.PoolName == poolName {
-			if dependency != nil {
-				return nil, fmt.Errorf("Found more then one vmo dependencies for workerpool %s in the worker provider status", poolName)
-			}
-			dependency = &dep
+		if dep.PoolName != poolName {
+			continue
 		}
+		if dependency != nil {
+			return nil, fmt.Errorf("Found more then one vmo dependencies for workerpool %s in the worker provider status", poolName)
+		}
+		runVariableTmp := dep
+		dependency = &runVariableTmp
 	}
 	return dependency, nil
 }

@@ -1,4 +1,4 @@
-package machineset
+package machinesetclient
 
 import (
 	"context"
@@ -17,8 +17,8 @@ import (
 // VirtualMachine ScaleSet Orchestration Mode VM (VMO)
 
 // IsVMORequired determines if VMO is required.
-func IsVMORequired(infraStatus *azureapi.InfrastructureStatus) bool {
-	if infraStatus.Zoned || len(infraStatus.AvailabilitySets) > 0 {
+func IsVMORequired(infrastructureStatus *azureapi.InfrastructureStatus) bool {
+	if infrastructureStatus.Zoned || len(infrastructureStatus.AvailabilitySets) > 0 {
 		return false
 	}
 	return true

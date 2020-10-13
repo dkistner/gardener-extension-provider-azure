@@ -4,17 +4,17 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
-	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	azureapi "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	azureapihelper "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
-	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machineset"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machinesetclient"
+
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
 )
 
-func (w *workerDelegate) reconcileVmoDependencies(ctx context.Context, infrastructureStatus *azureapi.InfrastructureStatus, workerProviderStatus *azureapi.WorkerStatus) ([]api.VmoDependency, error) {
+func (w *workerDelegate) reconcileVmoDependencies(ctx context.Context, infrastructureStatus *azureapi.InfrastructureStatus, workerProviderStatus *azureapi.WorkerStatus) ([]azureapi.VmoDependency, error) {
 	var (
 		vmoDependencies  = copyVmoDependencies(workerProviderStatus)
-		machineSetClient = machineset.NewClients(&w.azureClients.Vmo)
+		machineSetClient = machinesetclient.NewClients(&w.azureClients.Vmo)
 	)
 
 	faultDomainCount, err := azureapihelper.FindDomainCountByRegion(w.cloudProfileConfig.CountFaultDomains, w.worker.Spec.Region)
@@ -30,12 +30,13 @@ func (w *workerDelegate) reconcileVmoDependencies(ctx context.Context, infrastru
 		}
 		vmoDependencies = appendVmoDependency(vmoDependencies, vmoDependencyStatus)
 	}
+
 	return vmoDependencies, nil
 }
 
-func (w *workerDelegate) reconcileVMO(ctx context.Context, client *machineset.Clients, dependencies []api.VmoDependency, resourceGroupName, workerPoolName string, faultDomainCount int32) (*azureapi.VmoDependency, error) {
+func (w *workerDelegate) reconcileVMO(ctx context.Context, client *machinesetclient.Clients, dependencies []azureapi.VmoDependency, resourceGroupName, workerPoolName string, faultDomainCount int32) (*azureapi.VmoDependency, error) {
 	var (
-		existingDependency *api.VmoDependency
+		existingDependency *azureapi.VmoDependency
 		vmo                *compute.VirtualMachineScaleSet
 		err                error
 	)
@@ -62,7 +63,7 @@ func (w *workerDelegate) reconcileVMO(ctx context.Context, client *machineset.Cl
 		if err != nil {
 			return nil, err
 		}
-		return &api.VmoDependency{
+		return &azureapi.VmoDependency{
 			ID:       *newVMO.ID,
 			Name:     *newVMO.Name,
 			PoolName: workerPoolName,
@@ -76,23 +77,23 @@ func (w *workerDelegate) reconcileVMO(ctx context.Context, client *machineset.Cl
 		if err != nil {
 			return nil, err
 		}
-		return &api.VmoDependency{
+		return &azureapi.VmoDependency{
 			ID:       *newVMO.ID,
 			Name:     *newVMO.Name,
 			PoolName: workerPoolName,
 		}, nil
 	}
 
-	return &api.VmoDependency{
+	return &azureapi.VmoDependency{
 		ID:       *vmo.ID,
 		Name:     *vmo.Name,
 		PoolName: workerPoolName,
 	}, nil
 }
 
-func (w *workerDelegate) cleanupVmoDependencies(ctx context.Context, infrastructureStatus *azureapi.InfrastructureStatus, workerProviderStatus *azureapi.WorkerStatus) ([]api.VmoDependency, error) {
+func (w *workerDelegate) cleanupVmoDependencies(ctx context.Context, infrastructureStatus *azureapi.InfrastructureStatus, workerProviderStatus *azureapi.WorkerStatus) ([]azureapi.VmoDependency, error) {
 	var (
-		machineSetClient = machineset.NewClients(&w.azureClients.Vmo)
+		machineSetClient = machinesetclient.NewClients(&w.azureClients.Vmo)
 		vmoDependencies  = copyVmoDependencies(workerProviderStatus)
 	)
 
@@ -133,7 +134,7 @@ func (w *workerDelegate) cleanupVmoDependencies(ctx context.Context, infrastruct
 	return vmoDependencies, nil
 }
 
-func cleanupOrphanVMODependencies(ctx context.Context, client *machineset.Clients, dependencies []api.VmoDependency, resourceGroupName string) error {
+func cleanupOrphanVMODependencies(ctx context.Context, client *machinesetclient.Clients, dependencies []azureapi.VmoDependency, resourceGroupName string) error {
 	vmoList, err := client.ListVMOs(ctx, resourceGroupName)
 	if err != nil {
 		return err
@@ -158,7 +159,7 @@ func cleanupOrphanVMODependencies(ctx context.Context, client *machineset.Client
 
 // VMO Helper
 
-func copyVmoDependencies(workerStatus *api.WorkerStatus) []api.VmoDependency {
+func copyVmoDependencies(workerStatus *azureapi.WorkerStatus) []azureapi.VmoDependency {
 	statusCopy := workerStatus.DeepCopy()
 	return statusCopy.VmoDependencies
 }
@@ -166,7 +167,7 @@ func copyVmoDependencies(workerStatus *api.WorkerStatus) []api.VmoDependency {
 // appendVmoDependency appends a new vmo to the dependency list.
 // If the dependency list contains already a vmo for the workerpool then the
 // existing vmo object will be replaced by the given vmo object.
-func appendVmoDependency(dependencies []api.VmoDependency, dependency *api.VmoDependency) []api.VmoDependency {
+func appendVmoDependency(dependencies []azureapi.VmoDependency, dependency *azureapi.VmoDependency) []azureapi.VmoDependency {
 	var idx *int
 	for i, dep := range dependencies {
 		if dep.PoolName == dependency.PoolName {
@@ -174,7 +175,6 @@ func appendVmoDependency(dependencies []api.VmoDependency, dependency *api.VmoDe
 			break
 		}
 	}
-
 	if idx != nil {
 		dependencies[*idx] = *dependency
 	} else {
@@ -184,7 +184,7 @@ func appendVmoDependency(dependencies []api.VmoDependency, dependency *api.VmoDe
 }
 
 // removeVmoDependency will remove a given vmo dependency from the passed list of dependencies.
-func removeVmoDependency(dependencies []api.VmoDependency, dependency api.VmoDependency) []api.VmoDependency {
+func removeVmoDependency(dependencies []azureapi.VmoDependency, dependency azureapi.VmoDependency) []azureapi.VmoDependency {
 	var idx *int
 	for i, dep := range dependencies {
 		if reflect.DeepEqual(dependency, dep) {

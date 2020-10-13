@@ -1,4 +1,4 @@
-package machineset
+package machinesetclient
 
 import azurecompute "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
 

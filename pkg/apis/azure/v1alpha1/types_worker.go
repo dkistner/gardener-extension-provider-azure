@@ -33,8 +33,8 @@ type WorkerStatus struct {
 	// +optional
 	MachineImages []MachineImage `json:"machineImages,omitempty"`
 
-	// +optional
 	// VmoDependencies is a list of external VirtualMachineScaleSet Orchestration Mode VM (VMO) dependencies.
+	// +optional
 	VmoDependencies []VmoDependency `json:"vmoDependencies,omitempty"`
 }
 

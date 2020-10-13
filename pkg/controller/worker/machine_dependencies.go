@@ -3,10 +3,10 @@ package worker
 import (
 	"context"
 
-	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
-	"github.com/pkg/errors"
+	azureapi "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machinesetclient"
 
-	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machineset"
+	"github.com/pkg/errors"
 )
 
 func (w *workerDelegate) DeployMachineDependencies(ctx context.Context) error {
@@ -20,13 +20,14 @@ func (w *workerDelegate) DeployMachineDependencies(ctx context.Context) error {
 		return err
 	}
 
-	if machineset.IsVMORequired(infrastructureStatus) {
-		newVmoDependencies, err := w.reconcileVmoDependencies(ctx, infrastructureStatus, workerProviderStatus)
+	if machinesetclient.IsVMORequired(infrastructureStatus) {
+		vmoDependencyList, err := w.reconcileVmoDependencies(ctx, infrastructureStatus, workerProviderStatus)
 		if err != nil {
-			return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, err)
+			return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, vmoDependencyList, err)
 		}
-		return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, nil)
+		return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, vmoDependencyList, nil)
 	}
+
 	return nil
 }
 
@@ -41,7 +42,7 @@ func (w *workerDelegate) CleanupMachineDependencies(ctx context.Context) error {
 		return err
 	}
 
-	if machineset.IsVMORequired(infrastructureStatus) {
+	if machinesetclient.IsVMORequired(infrastructureStatus) {
 		newVmoDependencies, err := w.cleanupVmoDependencies(ctx, infrastructureStatus, workerProviderStatus)
 		if err != nil {
 			return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, err)
@@ -54,7 +55,7 @@ func (w *workerDelegate) CleanupMachineDependencies(ctx context.Context) error {
 
 // Helper
 
-func (w workerDelegate) updateMachineDependenciesStatus(ctx context.Context, workerStatus *api.WorkerStatus, vmoDependencies []api.VmoDependency, err error) error {
+func (w workerDelegate) updateMachineDependenciesStatus(ctx context.Context, workerStatus *azureapi.WorkerStatus, vmoDependencies []azureapi.VmoDependency, err error) error {
 	workerStatus.VmoDependencies = vmoDependencies
 
 	if statusUpdateErr := w.updateWorkerProviderStatus(ctx, workerStatus); statusUpdateErr != nil {

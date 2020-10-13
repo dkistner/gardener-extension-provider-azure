@@ -20,6 +20,7 @@ require (
 	github.com/go-logr/logr v0.1.0
 	github.com/gobuffalo/packr/v2 v2.8.0
 	github.com/golang/mock v1.4.4-0.20200731163441-8734ec565a4d
+	github.com/golang/snappy v0.0.2 // indirect
 	github.com/google/go-cmp v0.4.1 // indirect
 	github.com/nwaples/rardecode v1.1.0 // indirect
 	github.com/onsi/ginkgo v1.14.0
