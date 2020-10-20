@@ -25,7 +25,7 @@ func IsVMORequired(infrastructureStatus *azureapi.InfrastructureStatus) bool {
 }
 
 // ListVMOs will list all Gardener managed VMOs in a given resource group.
-func (c *Clients) ListVMOs(ctx context.Context, resourceGroupName string) ([]azurecompute.VirtualMachineScaleSet, error) {
+func (c *clients) ListVMOs(ctx context.Context, resourceGroupName string) ([]azurecompute.VirtualMachineScaleSet, error) {
 	pages, err := c.vmo.List(ctx, resourceGroupName)
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (c *Clients) ListVMOs(ctx context.Context, resourceGroupName string) ([]azu
 }
 
 // GetVMO will fetch a VMO based on given resourceGroupName and name.GetVMO.
-func (c *Clients) GetVMO(ctx context.Context, resourceGroupName, name string) (*azurecompute.VirtualMachineScaleSet, error) {
+func (c *clients) GetVMO(ctx context.Context, resourceGroupName, name string) (*azurecompute.VirtualMachineScaleSet, error) {
 	vmo, err := c.vmo.Get(ctx, resourceGroupName, name)
 	if err != nil {
 		if internal.AzureAPIErrorNotFound(err) {
@@ -59,7 +59,7 @@ func (c *Clients) GetVMO(ctx context.Context, resourceGroupName, name string) (*
 }
 
 // CreateVMO will create a VMO with passed configuration like resource group, name, region and fault domain count.
-func (c *Clients) CreateVMO(ctx context.Context, resourceGroupName, name, region string, faultDomainCount int32) (*azurecompute.VirtualMachineScaleSet, error) {
+func (c *clients) CreateVMO(ctx context.Context, resourceGroupName, name, region string, faultDomainCount int32) (*azurecompute.VirtualMachineScaleSet, error) {
 	// Generate a random string as suffix for the VMO name.
 	randomString, err := utils.GenerateRandomString(8)
 	if err != nil {
@@ -96,7 +96,7 @@ func (c *Clients) CreateVMO(ctx context.Context, resourceGroupName, name, region
 }
 
 // DeleteVMO will delete a VMO based on passed resource group and name.
-func (c *Clients) DeleteVMO(ctx context.Context, resourceGroupName, name string) error {
+func (c *clients) DeleteVMO(ctx context.Context, resourceGroupName, name string) error {
 	future, err := c.vmo.Delete(ctx, resourceGroupName, name)
 	if err != nil {
 		return err

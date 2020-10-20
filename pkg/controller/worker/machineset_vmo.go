@@ -14,7 +14,7 @@ import (
 func (w *workerDelegate) reconcileVmoDependencies(ctx context.Context, infrastructureStatus *azureapi.InfrastructureStatus, workerProviderStatus *azureapi.WorkerStatus) ([]azureapi.VmoDependency, error) {
 	var (
 		vmoDependencies  = copyVmoDependencies(workerProviderStatus)
-		machineSetClient = machinesetclient.NewClients(&w.azureClients.Vmo)
+		machineSetClient = machinesetclient.NewMachineSetClients(&w.azureClients.Vmo)
 	)
 
 	faultDomainCount, err := azureapihelper.FindDomainCountByRegion(w.cloudProfileConfig.CountFaultDomains, w.worker.Spec.Region)
@@ -34,7 +34,7 @@ func (w *workerDelegate) reconcileVmoDependencies(ctx context.Context, infrastru
 	return vmoDependencies, nil
 }
 
-func (w *workerDelegate) reconcileVMO(ctx context.Context, client *machinesetclient.Clients, dependencies []azureapi.VmoDependency, resourceGroupName, workerPoolName string, faultDomainCount int32) (*azureapi.VmoDependency, error) {
+func (w *workerDelegate) reconcileVMO(ctx context.Context, client machinesetclient.MachineSetClient, dependencies []azureapi.VmoDependency, resourceGroupName, workerPoolName string, faultDomainCount int32) (*azureapi.VmoDependency, error) {
 	var (
 		existingDependency *azureapi.VmoDependency
 		vmo                *compute.VirtualMachineScaleSet
@@ -93,7 +93,7 @@ func (w *workerDelegate) reconcileVMO(ctx context.Context, client *machinesetcli
 
 func (w *workerDelegate) cleanupVmoDependencies(ctx context.Context, infrastructureStatus *azureapi.InfrastructureStatus, workerProviderStatus *azureapi.WorkerStatus) ([]azureapi.VmoDependency, error) {
 	var (
-		machineSetClient = machinesetclient.NewClients(&w.azureClients.Vmo)
+		machineSetClient = machinesetclient.NewMachineSetClients(&w.azureClients.Vmo)
 		vmoDependencies  = copyVmoDependencies(workerProviderStatus)
 	)
 
@@ -134,7 +134,7 @@ func (w *workerDelegate) cleanupVmoDependencies(ctx context.Context, infrastruct
 	return vmoDependencies, nil
 }
 
-func cleanupOrphanVMODependencies(ctx context.Context, client *machinesetclient.Clients, dependencies []azureapi.VmoDependency, resourceGroupName string) error {
+func cleanupOrphanVMODependencies(ctx context.Context, client machinesetclient.MachineSetClient, dependencies []azureapi.VmoDependency, resourceGroupName string) error {
 	vmoList, err := client.ListVMOs(ctx, resourceGroupName)
 	if err != nil {
 		return err
