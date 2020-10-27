@@ -16,6 +16,10 @@ import (
 
 // VirtualMachine ScaleSet Orchestration Mode VM (VMO)
 
+// UseVMOAnnotation is an annotation for the Shoot resource which indicate
+// if vmo should be used for non-zonal cluster instead of a primary AvailabilitySet.
+const UseVMOAnnotation = "azure.provider.extensions.gardener.cloud/enable-vmo"
+
 // IsVMORequired determines if VMO is required.
 func IsVMORequired(infrastructureStatus *azureapi.InfrastructureStatus) bool {
 	if infrastructureStatus.Zoned || len(infrastructureStatus.AvailabilitySets) > 0 {

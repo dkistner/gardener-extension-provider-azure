@@ -25,6 +25,7 @@ import (
 	apiv1alpha1 "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/v1alpha1"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machinesetclient"
 	"github.com/gardener/gardener/extensions/pkg/controller"
 	"github.com/gardener/gardener/extensions/pkg/terraformer"
 
@@ -62,8 +63,6 @@ const (
 	TerraformerOutputKeyIdentityID = "identityID"
 	// TerraformerOutputKeyIdentityClientID is the key for the identityClientID output
 	TerraformerOutputKeyIdentityClientID = "identityClientID"
-
-	useVMOAnnotation = "azure.provider.extensions.gardener.cloud/enable-vmo"
 )
 
 // StatusTypeMeta is the TypeMeta of the Azure InfrastructureStatus
@@ -453,7 +452,7 @@ func isPrimaryAvailabilitySetRequired(infra *extensionsv1alpha1.Infrastructure, 
 	}
 
 	var vmoConfigured bool
-	if value, exists := cluster.Shoot.Annotations[useVMOAnnotation]; exists && value == "true" {
+	if value, exists := cluster.Shoot.Annotations[machinesetclient.UseVMOAnnotation]; exists && value == "true" {
 		vmoConfigured = true
 	}
 
