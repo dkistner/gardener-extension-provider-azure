@@ -258,7 +258,7 @@ var _ = Describe("Terraform", func() {
 			BeforeEach(func() {
 				config.Zoned = false
 				cluster.Shoot.Annotations = map[string]string{
-					machinesetclient.UseVMOAnnotation: "true",
+					machinesetclient.AnnotationVMOUsage: "true",
 				}
 			})
 

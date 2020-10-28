@@ -58,9 +58,9 @@ func ValidateInfrastructureConfig(infra *apisazure.InfrastructureConfig, nodesCI
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("resourceGroup"), infra.ResourceGroup, "specifying an existing resource group is not supported yet"))
 	}
 
-	annotationValue, annotationExists := annotations[machinesetclient.UseVMOAnnotation]
+	annotationValue, annotationExists := annotations[machinesetclient.AnnotationVMOUsage]
 	if annotationExists && annotationValue == "true" && infra.Zoned {
-		allErrs = append(allErrs, field.Invalid(fldPath.Child("zoned"), infra.Zoned, fmt.Sprintf("specifying a zoned cluster and having a the %q annotation is not possible", machinesetclient.UseVMOAnnotation)))
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("zoned"), infra.Zoned, fmt.Sprintf("specifying a zoned cluster and having a the %q annotation is not possible", machinesetclient.AnnotationVMOUsage)))
 	}
 
 	networksPath := fldPath.Child("networks")
@@ -142,26 +142,26 @@ func ValidateVMOConfigurationUpdate(oldConfig, newConfig *apisazure.Infrastructu
 	allErrs := field.ErrorList{}
 
 	// Check if old shoot has not the vmo annotation and forbid to add it.
-	if _, exists := oldShootAnnotations[machinesetclient.UseVMOAnnotation]; !exists {
-		_, annotationExists := newShootAnnotation[machinesetclient.UseVMOAnnotation]
+	if _, exists := oldShootAnnotations[machinesetclient.AnnotationVMOUsage]; !exists {
+		_, annotationExists := newShootAnnotation[machinesetclient.AnnotationVMOUsage]
 		if annotationExists {
-			allErrs = append(allErrs, field.Forbidden(metaDataPath.Child("annotations"), fmt.Sprintf("not allowed to add vmo annotation %q to an already existing cluster", machinesetclient.UseVMOAnnotation)))
+			allErrs = append(allErrs, field.Forbidden(metaDataPath.Child("annotations"), fmt.Sprintf("not allowed to add vmo annotation %q to an already existing cluster", machinesetclient.AnnotationVMOUsage)))
 		}
 	}
 
 	// Check if the olf shoot has the vmo annotation and forbid to remove or modify it. Also forbid to change to move the new shoot to a zoned if annotated to be a vmo one.
-	if value, exists := oldShootAnnotations[machinesetclient.UseVMOAnnotation]; exists && value == "true" {
+	if value, exists := oldShootAnnotations[machinesetclient.AnnotationVMOUsage]; exists && value == "true" {
 		if newConfig.Zoned {
-			allErrs = append(allErrs, field.Invalid(providerPath.Child("zoned"), newConfig.Zoned, fmt.Sprintf("not allowed to switch to a zoned cluster when already using a vmo based cluster (via annotation %q)", machinesetclient.UseVMOAnnotation)))
+			allErrs = append(allErrs, field.Invalid(providerPath.Child("zoned"), newConfig.Zoned, fmt.Sprintf("not allowed to switch to a zoned cluster when already using a vmo based cluster (via annotation %q)", machinesetclient.AnnotationVMOUsage)))
 		}
 
-		annotationValue, annotationExists := newShootAnnotation[machinesetclient.UseVMOAnnotation]
+		annotationValue, annotationExists := newShootAnnotation[machinesetclient.AnnotationVMOUsage]
 		if !annotationExists {
 
-			allErrs = append(allErrs, field.Forbidden(metaDataPath.Child("annotations"), fmt.Sprintf("not allowed to remove vmo annotation %q if it is already in use", machinesetclient.UseVMOAnnotation)))
+			allErrs = append(allErrs, field.Forbidden(metaDataPath.Child("annotations"), fmt.Sprintf("not allowed to remove vmo annotation %q if it is already in use", machinesetclient.AnnotationVMOUsage)))
 		}
 		if annotationExists && annotationValue != "true" {
-			allErrs = append(allErrs, field.Invalid(metaDataPath.Child("annotations"), annotationValue, fmt.Sprintf("not allowed to modify the vmo annotation %q if it is already in use", machinesetclient.UseVMOAnnotation)))
+			allErrs = append(allErrs, field.Invalid(metaDataPath.Child("annotations"), annotationValue, fmt.Sprintf("not allowed to modify the vmo annotation %q if it is already in use", machinesetclient.AnnotationVMOUsage)))
 		}
 	}
 

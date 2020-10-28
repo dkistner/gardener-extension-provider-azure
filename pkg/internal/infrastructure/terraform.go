@@ -452,7 +452,7 @@ func isPrimaryAvailabilitySetRequired(infra *extensionsv1alpha1.Infrastructure, 
 	}
 
 	var vmoConfigured bool
-	if value, exists := cluster.Shoot.Annotations[machinesetclient.UseVMOAnnotation]; exists && value == "true" {
+	if value, exists := cluster.Shoot.Annotations[machinesetclient.AnnotationVMOUsage]; exists && value == "true" {
 		vmoConfigured = true
 	}
 

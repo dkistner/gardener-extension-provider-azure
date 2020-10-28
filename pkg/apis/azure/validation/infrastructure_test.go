@@ -152,9 +152,9 @@ var _ = Describe("InfrastructureConfig validation", func() {
 		})
 
 		Context("Zonal", func() {
-			It(fmt.Sprintf("should forbid specifying the %q annotation for a zonal cluster", machinesetclient.UseVMOAnnotation), func() {
+			It(fmt.Sprintf("should forbid specifying the %q annotation for a zonal cluster", machinesetclient.AnnotationVMOUsage), func() {
 				infrastructureConfig.Zoned = true
-				shootAnnotations[machinesetclient.UseVMOAnnotation] = "true"
+				shootAnnotations[machinesetclient.AnnotationVMOUsage] = "true"
 
 				errorList := ValidateInfrastructureConfig(infrastructureConfig, &nodes, &pods, &services, shootAnnotations, providerPath)
 
@@ -402,14 +402,14 @@ var _ = Describe("InfrastructureConfig validation", func() {
 		)
 
 		BeforeEach(func() {
-			shootAnnotations[machinesetclient.UseVMOAnnotation] = "true"
+			shootAnnotations[machinesetclient.AnnotationVMOUsage] = "true"
 			newInfrastructureConfig = infrastructureConfig.DeepCopy()
 			newShootAnnotations = map[string]string{}
 		})
 
 		It("should forbid to move from a vmo based cluster to a zonal cluster", func() {
 			newInfrastructureConfig.Zoned = true
-			newShootAnnotations[machinesetclient.UseVMOAnnotation] = "true"
+			newShootAnnotations[machinesetclient.AnnotationVMOUsage] = "true"
 
 			errorList := ValidateVMOConfigurationUpdate(infrastructureConfig, newInfrastructureConfig, shootAnnotations, newShootAnnotations, providerPath, metaDataPath)
 
@@ -419,7 +419,7 @@ var _ = Describe("InfrastructureConfig validation", func() {
 			}))))
 		})
 
-		It(fmt.Sprintf("should forbid remove the %q annotation if it is already is use", machinesetclient.UseVMOAnnotation), func() {
+		It(fmt.Sprintf("should forbid remove the %q annotation if it is already is use", machinesetclient.AnnotationVMOUsage), func() {
 			errorList := ValidateVMOConfigurationUpdate(infrastructureConfig, newInfrastructureConfig, shootAnnotations, newShootAnnotations, providerPath, metaDataPath)
 
 			Expect(errorList).To(ConsistOf(PointTo(MatchFields(IgnoreExtras, Fields{
@@ -428,8 +428,8 @@ var _ = Describe("InfrastructureConfig validation", func() {
 			}))))
 		})
 
-		It(fmt.Sprintf("should forbid modify the %q annotation value if it is already is use", machinesetclient.UseVMOAnnotation), func() {
-			newShootAnnotations[machinesetclient.UseVMOAnnotation] = "modified"
+		It(fmt.Sprintf("should forbid modify the %q annotation value if it is already is use", machinesetclient.AnnotationVMOUsage), func() {
+			newShootAnnotations[machinesetclient.AnnotationVMOUsage] = "modified"
 
 			errorList := ValidateVMOConfigurationUpdate(infrastructureConfig, newInfrastructureConfig, shootAnnotations, newShootAnnotations, providerPath, metaDataPath)
 
@@ -439,9 +439,9 @@ var _ = Describe("InfrastructureConfig validation", func() {
 			}))))
 		})
 
-		It(fmt.Sprintf("should forbid to add the %q annotation if the cluster is already there", machinesetclient.UseVMOAnnotation), func() {
+		It(fmt.Sprintf("should forbid to add the %q annotation if the cluster is already there", machinesetclient.AnnotationVMOUsage), func() {
 			shootAnnotations = map[string]string{}
-			newShootAnnotations[machinesetclient.UseVMOAnnotation] = "true"
+			newShootAnnotations[machinesetclient.AnnotationVMOUsage] = "true"
 
 			errorList := ValidateVMOConfigurationUpdate(infrastructureConfig, newInfrastructureConfig, shootAnnotations, newShootAnnotations, providerPath, metaDataPath)
 
