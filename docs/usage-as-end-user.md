@@ -257,15 +257,18 @@ Supported machine types are listed in the CloudProfile in `.spec.providerConfig.
 
 ### Preview: Shoot clusters with VMSS Orchestration Mode VM
 
-Azure Shoot cluster can be created whose machines are attached to a [Azure VMSS orchestraion mode VM (VMO)](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/orchestration-modes).
-This is currently available only in preview as VMO is not yet general available on Azure.
-Azure VMO could replace Azure AvailabilitySets mid-term as they are intended to come with less disadvantages like blocking machine operations or compatible with `standard` SKU loadbalancer etc.
+Azure Shoot clusters can be created with machines which are attached to an [Azure VMSS orchestraion mode VM (VMO)](https://docs.microsoft.com/en-us/azure/virtual-machine-scale-sets/orchestration-modes).
+This VMO resource is currently only available in preview mode and not yet general available on Azure.
+To use VMO you need to register your subscription to participate on the preview.
 
-To deploy a Shoot cluster which is based on VMO instead of AvailabilitySet it is required to whitelist the respective Azure subscription to participate on the preview.
+Azure VMO are intended to replace Azure AvailabilitySet for non-zoned Azure Shoot clusters in the mid-term as VMO come with less disadvantages like no blocking machine operations or compability with `Standard` SKU loadbalancer etc.
 
-The Shoot cluster configuration need to set the `.zoned` field to `false` in the `InfrastructureConfig` and the Shoot need additionally an annotation `azure.provider.extensions.gardener.cloud/enable-vmo=true`.
+To configure an Azure Shoot cluster which make use of VMO you need to do the following:
+- The `InfrastructureConfig` of the Shoot configuration need to contain `.zoned=false`
+- Shoot resource need to have the following annotation: `alpha.azure.provider.extensions.gardener.cloud/vmo=true`
 
-Unlike AvailabilitySet Shoot clusters, which have a central set shared accross all machines in all worker pools, VMO based clusters have an own VMO per workerpool.
-In case that the VMO configuration will change (e.g. amount of fault domains in a region change; configured in the CloudProfile) then the machines of workerpool need to be rolled.
-It is not possible to migrate an existing AvailabilitySet based Shoot cluster to VMO based Shoot cluster and vice versa.
-VMO based clusters are using `standard` SKU LoadBalancers instead of `basic` SKU loadbalancer for AvailabilitySet based Shoot clusters.
+Some key facts about VMO based clusters:
+- Unlike regular non-zonal Azure Shoot clusters, which have a primary AvailabilitySet which is shared between all machines in all worker pools of a Shoot cluster, a VMO based cluster has an own VMO for each workerpool
+- In case the configuration of the VMO will change (e.g. amount of fault domains in a region change; configured in the CloudProfile) all machines of the worker pool need to be rolled
+- It is not possible to migrate an existing primary AvailabilitySet based Shoot cluster to VMO based Shoot cluster and vice versa
+- VMO based clusters are using `Standard` SKU LoadBalancers instead of `Basic` SKU LoadBalancers for AvailabilitySet based Shoot clusters
