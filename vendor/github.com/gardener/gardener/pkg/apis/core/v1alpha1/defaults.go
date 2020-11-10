@@ -103,33 +103,37 @@ func SetDefaults_Seed(obj *Seed) {
 	}
 
 	if obj.Spec.Settings.ExcessCapacityReservation == nil {
-		obj.Spec.Settings.ExcessCapacityReservation = &SeedSettingExcessCapacityReservation{Enabled: true}
+		enabled := true
+		for _, taint := range obj.Spec.Taints {
+			if taint.Key == DeprecatedSeedTaintDisableCapacityReservation {
+				enabled = false
+			}
+		}
+		obj.Spec.Settings.ExcessCapacityReservation = &SeedSettingExcessCapacityReservation{Enabled: enabled}
 	}
 
 	if obj.Spec.Settings.Scheduling == nil {
-		obj.Spec.Settings.Scheduling = &SeedSettingScheduling{Visible: true}
+		visible := true
+		for _, taint := range obj.Spec.Taints {
+			if taint.Key == DeprecatedSeedTaintInvisible {
+				visible = false
+			}
+		}
+		obj.Spec.Settings.Scheduling = &SeedSettingScheduling{Visible: visible}
 	}
 
 	if obj.Spec.Settings.ShootDNS == nil {
-		obj.Spec.Settings.ShootDNS = &SeedSettingShootDNS{Enabled: true}
+		enabled := true
+		for _, taint := range obj.Spec.Taints {
+			if taint.Key == DeprecatedSeedTaintDisableDNS {
+				enabled = false
+			}
+		}
+		obj.Spec.Settings.ShootDNS = &SeedSettingShootDNS{Enabled: enabled}
 	}
 
 	if obj.Spec.Settings.VerticalPodAutoscaler == nil {
 		obj.Spec.Settings.VerticalPodAutoscaler = &SeedSettingVerticalPodAutoscaler{Enabled: true}
-	}
-
-	// TODO: remove taints removal in version >=1.13
-	taintsToRemove := []string{
-		"seed.gardener.cloud/disable-capacity-reservation",
-		"seed.gardener.cloud/disable-dns",
-		"seed.gardener.cloud/invisible",
-	}
-	for _, taint := range taintsToRemove {
-		for i := len(obj.Spec.Taints) - 1; i >= 0; i-- {
-			if obj.Spec.Taints[i].Key == taint {
-				obj.Spec.Taints = append(obj.Spec.Taints[:i], obj.Spec.Taints[i+1:]...)
-			}
-		}
 	}
 }
 
@@ -207,26 +211,16 @@ func SetDefaults_Shoot(obj *Shoot) {
 	var (
 		kubeReservedMemory = resource.MustParse("1Gi")
 		kubeReservedCPU    = resource.MustParse("80m")
-		kubeReservedPID    = resource.MustParse("20k")
-
-		k8sVersionGreaterEqual115, _ = versionutils.CompareVersions(obj.Spec.Kubernetes.Version, ">=", "1.15")
 	)
 
 	if obj.Spec.Kubernetes.Kubelet.KubeReserved == nil {
 		obj.Spec.Kubernetes.Kubelet.KubeReserved = &KubeletConfigReserved{Memory: &kubeReservedMemory, CPU: &kubeReservedCPU}
-
-		if k8sVersionGreaterEqual115 {
-			obj.Spec.Kubernetes.Kubelet.KubeReserved.PID = &kubeReservedPID
-		}
 	} else {
 		if obj.Spec.Kubernetes.Kubelet.KubeReserved.Memory == nil {
 			obj.Spec.Kubernetes.Kubelet.KubeReserved.Memory = &kubeReservedMemory
 		}
 		if obj.Spec.Kubernetes.Kubelet.KubeReserved.CPU == nil {
 			obj.Spec.Kubernetes.Kubelet.KubeReserved.CPU = &kubeReservedCPU
-		}
-		if obj.Spec.Kubernetes.Kubelet.KubeReserved.PID == nil && k8sVersionGreaterEqual115 {
-			obj.Spec.Kubernetes.Kubelet.KubeReserved.PID = &kubeReservedPID
 		}
 	}
 

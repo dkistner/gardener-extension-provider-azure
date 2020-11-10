@@ -3,6 +3,7 @@ package worker_test
 import (
 	"context"
 
+	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -10,13 +11,28 @@ import (
 
 	"github.com/gardener/gardener/extensions/pkg/controller/common"
 	"github.com/gardener/gardener/extensions/pkg/controller/worker/genericactuator"
+	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
+	mockclient "github.com/gardener/gardener/pkg/mock/controller-runtime/client"
 )
 
 var _ = Describe("MachinesDependencies", func() {
-	var workerDelegate genericactuator.WorkerDelegate
+	var (
+		ctrl *gomock.Controller
+		c    *mockclient.MockClient
+
+		scheme, decoder = getSchemaAndDecoder()
+
+		workerDelegate genericactuator.WorkerDelegate
+		w              *extensionsv1alpha1.Worker
+	)
 
 	BeforeEach(func() {
-		workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(nil, nil, nil), nil, "", nil, nil)
+		ctrl = gomock.NewController(GinkgoT())
+		c = mockclient.NewMockClient(ctrl)
+
+		w = getDefaultWorker("shoot--foobar--azure", nil)
+		expectGetSecretCallToWork(c, w)
+		workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), nil, "", w, nil)
 	})
 
 	Context("#DeployMachineDependencies", func() {

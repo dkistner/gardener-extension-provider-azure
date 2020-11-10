@@ -15,13 +15,58 @@
 package worker_test
 
 import (
+	"encoding/json"
 	"testing"
 
+	apisazure "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	azureapi "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	apiv1alpha1 "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/v1alpha1"
+	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 )
 
 func TestWorker(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Worker Suite")
+}
+
+// Worker helper functions
+func getSchemaAndDecoder() (*runtime.Scheme, runtime.Decoder) {
+	scheme := runtime.NewScheme()
+	_ = apisazure.AddToScheme(scheme)
+	_ = apiv1alpha1.AddToScheme(scheme)
+	return scheme, serializer.NewCodecFactory(scheme).UniversalDecoder()
+}
+
+func encode(obj runtime.Object) []byte {
+	data, _ := json.Marshal(obj)
+	return data
+}
+
+func getDefaultWorker(namespace string, infrastructureStatus *azureapi.InfrastructureStatus) *extensionsv1alpha1.Worker {
+	var infraStatus *azureapi.InfrastructureStatus
+	if infrastructureStatus == nil {
+		infraStatus = &azureapi.InfrastructureStatus{
+			Zoned: true,
+		}
+	}
+	return &extensionsv1alpha1.Worker{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+		},
+		Spec: extensionsv1alpha1.WorkerSpec{
+			SecretRef: corev1.SecretReference{
+				Name:      "secret",
+				Namespace: namespace,
+			},
+			InfrastructureProviderStatus: &runtime.RawExtension{
+				Raw: encode(infraStatus),
+			},
+		},
+	}
 }

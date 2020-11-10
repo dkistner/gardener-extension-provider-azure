@@ -18,7 +18,6 @@ import (
 	"github.com/onsi/gomega/format"
 	"github.com/onsi/gomega/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 )
 
 // DeepEqual returns a Gomega matcher which checks whether the expected object is deeply equal with the object it is
@@ -54,14 +53,6 @@ func BeNotFoundError() types.GomegaMatcher {
 	}
 }
 
-// BeAlreadyExistsError checks if error is AlreadyExists.
-func BeAlreadyExistsError() types.GomegaMatcher {
-	return &kubernetesErrors{
-		checkFunc: apierrors.IsAlreadyExists,
-		message:   "AlreadyExists",
-	}
-}
-
 // BeForbiddenError checks if error is Forbidden.
 func BeForbiddenError() types.GomegaMatcher {
 	return &kubernetesErrors{
@@ -75,13 +66,5 @@ func BeBadRequestError() types.GomegaMatcher {
 	return &kubernetesErrors{
 		checkFunc: apierrors.IsBadRequest,
 		message:   "BadRequest",
-	}
-}
-
-// BeNoMatchError checks if error is a NoMatchError.
-func BeNoMatchError() types.GomegaMatcher {
-	return &kubernetesErrors{
-		checkFunc: meta.IsNoMatchError,
-		message:   "NoMatch",
 	}
 }

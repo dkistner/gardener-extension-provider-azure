@@ -19,8 +19,8 @@ import (
 
 	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	apiv1alpha1 "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/v1alpha1"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
-	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machinesetclient"
 	"github.com/gardener/gardener/extensions/pkg/controller"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -258,7 +258,7 @@ var _ = Describe("Terraform", func() {
 			BeforeEach(func() {
 				config.Zoned = false
 				cluster.Shoot.Annotations = map[string]string{
-					machinesetclient.AnnotationVMOUsage: "true",
+					azure.ShootVmoUsageAnnotation: "true",
 				}
 			})
 

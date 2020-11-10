@@ -33,6 +33,7 @@ import (
 type ManagedResourceHealthChecker struct {
 	logger              logr.Logger
 	seedClient          client.Client
+	shootClient         client.Client
 	managedResourceName string
 }
 
@@ -46,6 +47,11 @@ func CheckManagedResource(managedResourceName string) healthcheck.HealthCheck {
 // InjectSeedClient injects the seed client
 func (healthChecker *ManagedResourceHealthChecker) InjectSeedClient(seedClient client.Client) {
 	healthChecker.seedClient = seedClient
+}
+
+// InjectShootClient injects the shoot client
+func (healthChecker *ManagedResourceHealthChecker) InjectShootClient(shootClient client.Client) {
+	healthChecker.shootClient = shootClient
 }
 
 // SetLoggerSuffix injects the logger

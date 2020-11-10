@@ -17,18 +17,18 @@ package client
 import (
 	"context"
 
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2019-05-01/resources"
 	"github.com/Azure/azure-sdk-for-go/services/storage/mgmt/2019-04-01/storage"
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Factory represents a factory to produce clients for various Azure services.
 type Factory interface {
-	Group(context.Context, corev1.SecretReference) (Group, error)
-	Storage(context.Context, corev1.SecretReference) (Storage, error)
-	StorageAccount(context.Context, corev1.SecretReference) (StorageAccount, error)
+	Group() Group
+	Storage() Storage
+	StorageAccount() StorageAccount
+	Vmss() Vmss
 }
 
 // Group represents an Azure group client.
@@ -37,35 +37,51 @@ type Group interface {
 	DeleteIfExits(context.Context, string) error
 }
 
-// Storage represents an Azure (blob) storage client.
+// Storage represents an Azure storage account client.
 type Storage interface {
 	DeleteObjectsWithPrefix(context.Context, string, string) error
 	CreateContainerIfNotExists(context.Context, string) error
 	DeleteContainerIfExists(context.Context, string) error
 }
 
-// StorageAccount represents an Azure storage account client.
+// StorageAccount ...
 type StorageAccount interface {
 	CreateStorageAccount(context.Context, string, string, string) error
 	ListStorageAccountKey(context.Context, string, string) (string, error)
 }
 
-// AzureFactory is an implementation of Factory to produce clients for various Azure services.
-type AzureFactory struct {
-	client client.Client
+// Vmss represents an Azure vmss client.
+type Vmss interface {
+	List(context.Context, string) ([]compute.VirtualMachineScaleSet, error)
+	Get(context.Context, string, string) (*compute.VirtualMachineScaleSet, error)
+	Create(context.Context, string, string, *compute.VirtualMachineScaleSet) (*compute.VirtualMachineScaleSet, error)
+	Delete(context.Context, string, string) error
 }
 
-// StorageClient is an implementation of Storage for a (blob) storage client.
+// AzureFactory is a implementation of Factory to produce clients for various Azure services.
+type AzureFactory struct {
+	group          resources.GroupsClient
+	storageAccount storage.AccountsClient
+	vmss           compute.VirtualMachineScaleSetsClient
+	storageURL     azblob.ServiceURL
+}
+
+// StorageClient is a implementation of Storage for a storage account client.
 type StorageClient struct {
 	serviceURL *azblob.ServiceURL
 }
 
-// StorageAccountClient is an implementation of StorageAccount for storage account client.
+// StorageAccountClient ...
 type StorageAccountClient struct {
 	client storage.AccountsClient
 }
 
-// GroupClient is an implementation of Group for a resource group client.
+// GroupClient is a implementation of Group for a group client.
 type GroupClient struct {
 	client resources.GroupsClient
+}
+
+// VmssClient is a implementation of Vmss for a vmss client.
+type VmssClient struct {
+	client compute.VirtualMachineScaleSetsClient
 }

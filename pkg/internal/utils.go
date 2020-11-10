@@ -15,18 +15,27 @@
 package internal
 
 import (
-	"net/http"
+	azureapi "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 
 	"github.com/Azure/go-autorest/autorest"
 )
 
 // AzureAPIErrorNotFound tries to determine if an error is a resource not found error.
 func AzureAPIErrorNotFound(err error) bool {
-	switch e := err.(type) {
+	switch err.(type) {
 	case autorest.DetailedError:
-		if e.Response != nil && e.Response.StatusCode == http.StatusNotFound {
+		detailedErr := autorest.DetailedError(err.(autorest.DetailedError))
+		if detailedErr.Response != nil && detailedErr.Response.StatusCode == 404 {
 			return true
 		}
 	}
 	return false
+}
+
+// IsVMORequired determines if VMO is required.
+func IsVMORequired(infrastructureStatus *azureapi.InfrastructureStatus) bool {
+	if infrastructureStatus.Zoned || len(infrastructureStatus.AvailabilitySets) > 0 {
+		return false
+	}
+	return true
 }

@@ -16,58 +16,48 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/v1alpha1"
-
 	appsv1 "k8s.io/api/apps/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ScaleStatefulSet scales a StatefulSet.
 func ScaleStatefulSet(ctx context.Context, c client.Client, key client.ObjectKey, replicas int32) error {
-	statefulset := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      key.Name,
-			Namespace: key.Namespace,
-		},
+	// TODO: replace this with call to scale subresource once controller-runtime supports it
+	// see: https://github.com/kubernetes-sigs/controller-runtime/issues/172
+	statefulset := &appsv1.StatefulSet{}
+	if err := c.Get(ctx, key, statefulset); err != nil {
+		return err
 	}
 
-	return scaleResource(ctx, c, statefulset, replicas)
+	statefulset.Spec.Replicas = &replicas
+	return c.Update(ctx, statefulset)
 }
 
 // ScaleEtcd scales a Etcd resource.
 func ScaleEtcd(ctx context.Context, c client.Client, key client.ObjectKey, replicas int) error {
-	etcd := &druidv1alpha1.Etcd{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      key.Name,
-			Namespace: key.Namespace,
-		},
+	// TODO: replace this with call to scale subresource once controller-runtime supports it
+	// see: https://github.com/kubernetes-sigs/controller-runtime/issues/172
+	etcd := &druidv1alpha1.Etcd{}
+	if err := c.Get(ctx, key, etcd); err != nil {
+		return err
 	}
 
-	return scaleResource(ctx, c, etcd, int32(replicas))
+	etcd.Spec.Replicas = replicas
+	return c.Update(ctx, etcd)
 }
 
 // ScaleDeployment scales a Deployment.
 func ScaleDeployment(ctx context.Context, c client.Client, key client.ObjectKey, replicas int32) error {
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      key.Name,
-			Namespace: key.Namespace,
-		},
-	}
-
-	return scaleResource(ctx, c, deployment, replicas)
-}
-
-// scaleResource scales resource's 'spec.replicas' to replicas count
-func scaleResource(ctx context.Context, c client.Client, obj runtime.Object, replicas int32) error {
-	patch := []byte(fmt.Sprintf(`{"spec":{"replicas":%d}}`, replicas))
-
 	// TODO: replace this with call to scale subresource once controller-runtime supports it
 	// see: https://github.com/kubernetes-sigs/controller-runtime/issues/172
-	return c.Patch(ctx, obj, client.RawPatch(types.MergePatchType, patch))
+	deployment := &appsv1.Deployment{}
+	if err := c.Get(ctx, key, deployment); err != nil {
+		return err
+	}
+
+	deployment.Spec.Replicas = &replicas
+	return c.Update(ctx, deployment)
 }

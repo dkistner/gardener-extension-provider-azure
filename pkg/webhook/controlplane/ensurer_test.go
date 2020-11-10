@@ -126,7 +126,11 @@ var _ = Describe("Ensurer", func() {
 			},
 		)
 
-		key    = client.ObjectKey{Namespace: namespace, Name: azure.CloudProviderConfigName}
+		key = client.ObjectKey{Namespace: namespace, Name: azure.CloudProviderConfigName}
+		cm  = &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: azure.CloudProviderConfigName},
+			Data:       map[string]string{"abc": "xyz", azure.CloudProviderConfigMapKey: cloudProviderConfigContent},
+		}
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: azure.CloudProviderConfigName},
 			Data:       map[string][]byte{"abc": []byte("xyz"), azure.CloudProviderConfigMapKey: []byte(cloudProviderConfigContent)},
@@ -134,6 +138,10 @@ var _ = Describe("Ensurer", func() {
 
 		annotations = map[string]string{
 			"checksum/secret-" + azure.CloudProviderConfigName: "546bca950d25ff0b53fe8b7d7e2cee183f61524d4e3207f9e4db953ee06bc48d",
+		}
+
+		annotationsConfigMap = map[string]string{
+			"checksum/configmap-" + azure.CloudProviderConfigName: "31d2e116fbf854a590e84ab9176f299af6ff86aeea61bcee6bd705de78da9bf3",
 		}
 
 		kubeControllerManagerLabels = map[string]string{
@@ -266,12 +274,13 @@ var _ = Describe("Ensurer", func() {
 		})
 
 		It("should add missing elements to kube-controller-manager deployment (k8s < 1.17)", func() {
-			c.EXPECT().Get(ctx, key, &corev1.Secret{}).DoAndReturn(clientGet(secret))
+			c.EXPECT().Get(ctx, key, &corev1.Secret{}).Return(apierrors.NewNotFound(schema.GroupResource{}, "Secret"))
+			c.EXPECT().Get(ctx, key, &corev1.ConfigMap{}).DoAndReturn(clientGet(cm))
 
 			err := ensurer.EnsureKubeControllerManagerDeployment(ctx, eContextK8s116, dep, nil)
 			Expect(err).To(Not(HaveOccurred()))
 
-			checkKubeControllerManagerDeployment(dep, annotations, kubeControllerManagerLabels, "1.16.4", false)
+			checkKubeControllerManagerDeployment(dep, annotationsConfigMap, kubeControllerManagerLabels, "1.16.4", false)
 		})
 
 		It("should add missing elements to kube-controller-manager deployment (k8s >= 1.17, k8s < 1.20)", func() {
@@ -543,6 +552,10 @@ var _ = Describe("Ensurer", func() {
 	Describe("#EnsureKubeletCloudProviderConfig", func() {
 		var (
 			objKey = client.ObjectKey{Namespace: namespace, Name: azure.CloudProviderDiskConfigName}
+			cm     = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: azure.CloudProviderDiskConfigName},
+				Data:       map[string]string{"abc": "xyz", azure.CloudProviderConfigMapKey: cloudProviderConfigContent},
+			}
 			secret = &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: azure.CloudProviderDiskConfigName},
 				Data:       map[string][]byte{"abc": []byte("xyz"), azure.CloudProviderConfigMapKey: []byte(cloudProviderConfigContent)},
@@ -552,12 +565,22 @@ var _ = Describe("Ensurer", func() {
 			emptydata    = pointer.StringPtr("")
 		)
 
-		It("cloud provider secret does not exist", func() {
-			c.EXPECT().Get(ctx, objKey, &corev1.Secret{}).Return(apierrors.NewNotFound(schema.GroupResource{}, secret.Name))
+		It("cloud provider secret or configmap do not exist", func() {
+			c.EXPECT().Get(ctx, objKey, &corev1.Secret{}).Return(apierrors.NewNotFound(schema.GroupResource{}, cm.Name))
+			c.EXPECT().Get(ctx, objKey, &corev1.ConfigMap{}).Return(apierrors.NewNotFound(schema.GroupResource{}, cm.Name))
 
 			err := ensurer.EnsureKubeletCloudProviderConfig(ctx, dummyContext, emptydata, namespace)
 			Expect(err).To(Not(HaveOccurred()))
 			Expect(*emptydata).To(Equal(""))
+		})
+
+		It("should create element containing cloud provider config content with configmap", func() {
+			c.EXPECT().Get(ctx, objKey, &corev1.Secret{}).Return(apierrors.NewNotFound(schema.GroupResource{}, cm.Name))
+			c.EXPECT().Get(ctx, objKey, &corev1.ConfigMap{}).DoAndReturn(clientGet(cm))
+
+			err := ensurer.EnsureKubeletCloudProviderConfig(ctx, dummyContext, emptydata, namespace)
+			Expect(err).To(Not(HaveOccurred()))
+			Expect(*emptydata).To(Equal(cloudProviderConfigContent))
 		})
 
 		It("should create element containing cloud provider config content with secret", func() {

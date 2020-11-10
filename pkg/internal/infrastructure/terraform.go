@@ -25,7 +25,6 @@ import (
 	apiv1alpha1 "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/v1alpha1"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
-	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machinesetclient"
 	"github.com/gardener/gardener/extensions/pkg/controller"
 	"github.com/gardener/gardener/extensions/pkg/terraformer"
 
@@ -452,7 +451,7 @@ func isPrimaryAvailabilitySetRequired(infra *extensionsv1alpha1.Infrastructure, 
 	}
 
 	var vmoConfigured bool
-	if value, exists := cluster.Shoot.Annotations[machinesetclient.AnnotationVMOUsage]; exists && value == "true" {
+	if value, exists := cluster.Shoot.Annotations[azure.ShootVmoUsageAnnotation]; exists && value == "true" {
 		vmoConfigured = true
 	}
 

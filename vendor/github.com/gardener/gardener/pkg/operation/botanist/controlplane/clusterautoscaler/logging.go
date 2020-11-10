@@ -16,7 +16,6 @@ package clusterautoscaler
 
 import (
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
-	"github.com/gardener/gardener/pkg/operation/botanist/component"
 )
 
 const (
@@ -38,6 +37,6 @@ const (
 )
 
 // LoggingConfiguration returns a fluent-bit parser and filter for the cluster-autoscaler logs.
-func LoggingConfiguration() (component.LoggingConfig, error) {
-	return component.LoggingConfig{Filters: loggingFilter, Parsers: loggingParser, PodPrefix: v1beta1constants.DeploymentNameClusterAutoscaler, UserExposed: true}, nil
+func LoggingConfiguration() (string, string, error) {
+	return loggingParser, loggingFilter, nil
 }

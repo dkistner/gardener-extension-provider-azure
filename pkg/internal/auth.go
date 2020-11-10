@@ -19,12 +19,15 @@ import (
 	"fmt"
 
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
-
-	"github.com/Azure/go-autorest/autorest"
-	azureauth "github.com/Azure/go-autorest/autorest/azure/auth"
 	extensionscontroller "github.com/gardener/gardener/extensions/pkg/controller"
+
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	azurecompute "github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2019-12-01/compute"
+	azureresources "github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2019-05-01/resources"
+	azurestorage "github.com/Azure/azure-sdk-for-go/services/storage/mgmt/2019-04-01/storage"
+	azureauth "github.com/Azure/go-autorest/autorest/azure/auth"
 )
 
 // ClientAuth represents a Azure Client Auth credentials.
@@ -79,19 +82,44 @@ func ReadClientAuthDataFromSecret(secret *corev1.Secret) (*ClientAuth, error) {
 	}, nil
 }
 
-// GetAuthorizerAndSubscriptionID retrieves the client auth data specified by the secret reference
-// to create and return an Azure Authorizer and a subscription id.
-func GetAuthorizerAndSubscriptionID(ctx context.Context, c client.Client, secretRef corev1.SecretReference) (autorest.Authorizer, string, error) {
+// AzureClients is a bundle of clients for various Azure services.
+type AzureClients struct {
+	Group          azureresources.GroupsClient
+	StorageAccount azurestorage.AccountsClient
+	VM             azurecompute.VirtualMachinesClient
+	Vmo            azurecompute.VirtualMachineScaleSetsClient
+}
+
+// GetAzureClients returns a new bundle of clients for various Azure services.
+func GetAzureClients(ctx context.Context, c client.Client, secretRef corev1.SecretReference) (*AzureClients, error) {
 	clientAuth, err := GetClientAuthData(ctx, c, secretRef)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	clientCredentialsConfig := azureauth.NewClientCredentialsConfig(clientAuth.ClientID, clientAuth.ClientSecret, clientAuth.TenantID)
 
+	clientCredentialsConfig := azureauth.NewClientCredentialsConfig(clientAuth.ClientID, clientAuth.ClientSecret, clientAuth.TenantID)
 	authorizer, err := clientCredentialsConfig.Authorizer()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	return authorizer, clientAuth.SubscriptionID, nil
+	var clients = AzureClients{}
+
+	// ResourceGroup client
+	clients.Group = azureresources.NewGroupsClient(clientAuth.SubscriptionID)
+	clients.Group.Authorizer = authorizer
+
+	// StorageAccount client
+	clients.StorageAccount = azurestorage.NewAccountsClient(clientAuth.SubscriptionID)
+	clients.StorageAccount.Authorizer = authorizer
+
+	// VirtualMachine Client
+	clients.VM = azurecompute.NewVirtualMachinesClient(clientAuth.SubscriptionID)
+	clients.VM.Authorizer = authorizer
+
+	// VirtualMachineScaleSet orc mode VM (VMO) Client
+	clients.Vmo = azurecompute.NewVirtualMachineScaleSetsClient(clientAuth.SubscriptionID)
+	clients.Vmo.Authorizer = authorizer
+
+	return &clients, nil
 }

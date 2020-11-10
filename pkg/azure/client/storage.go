@@ -17,14 +17,8 @@ package client
 import (
 	"context"
 	"fmt"
-	"net/url"
-
-	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	extensionscontroller "github.com/gardener/gardener/extensions/pkg/controller"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // DeleteObjectsWithPrefix deletes the blob objects with the specific <prefix> from <container>.
@@ -48,7 +42,7 @@ func (c StorageClient) DeleteObjectsWithPrefix(ctx context.Context, container, p
 
 		// Process the blobs returned in this result segment
 		for _, blob := range listBlob.Segment.BlobItems {
-			if err := c.deleteBlobIfExists(ctx, container, blob.Name); err != nil {
+			if err := c.deleteBlobIfExists(ctx, c.serviceURL, container, blob.Name); err != nil {
 				return err
 			}
 		}
@@ -56,9 +50,9 @@ func (c StorageClient) DeleteObjectsWithPrefix(ctx context.Context, container, p
 	return nil
 }
 
-// deleteBlobIfExists deletes the azure blob with name <blobName> from <container>.
-// If it does not exist,no error is returned.
-func (c StorageClient) deleteBlobIfExists(ctx context.Context, container, blobName string) error {
+// deleteBlobIfExists deletes the azure blob with name <blobName> from <container>. If it does not exist,
+// no error is returned.
+func (c StorageClient) deleteBlobIfExists(ctx context.Context, serviceURL *azblob.ServiceURL, container, blobName string) error {
 	blockBlobURL := c.serviceURL.NewContainerURL(container).NewBlockBlobURL(blobName)
 	if _, err := blockBlobURL.Delete(ctx, azblob.DeleteSnapshotsOptionInclude, azblob.BlobAccessConditions{}); err != nil {
 		if stgErr, ok := err.(azblob.StorageError); ok {
@@ -104,41 +98,4 @@ func (c StorageClient) DeleteContainerIfExists(ctx context.Context, container st
 		return err
 	}
 	return nil
-}
-
-// newStorageClient creates a client for an Azure Blob storage by reading auth information from secret reference.
-func newStorageClient(ctx context.Context, client client.Client, secretRef *corev1.SecretReference) (*azblob.ServiceURL, error) {
-	secret, err := extensionscontroller.GetSecretByReference(ctx, client, secretRef)
-	if err != nil {
-		return nil, err
-	}
-
-	storageAccountName, ok := secret.Data[azure.StorageAccount]
-	if !ok {
-		return nil, fmt.Errorf("secret %s/%s doesn't have a storage account", secret.Namespace, secret.Name)
-	}
-
-	storageAccountKey, ok := secret.Data[azure.StorageKey]
-	if !ok {
-		return nil, fmt.Errorf("secret %s/%s doesn't have a storage key", secret.Namespace, secret.Name)
-	}
-
-	credentials, err := azblob.NewSharedKeyCredential(string(storageAccountName), string(storageAccountKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create shared key credentials: %v", err)
-	}
-
-	pipeline := azblob.NewPipeline(credentials, azblob.PipelineOptions{
-		Retry: azblob.RetryOptions{
-			Policy: azblob.RetryPolicyExponential,
-		},
-	})
-
-	storageAccountURL, err := url.Parse(fmt.Sprintf("https://%s.%s", storageAccountName, azure.AzureBlobStorageHostName))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse service url: %v", err)
-	}
-
-	serviceURL := azblob.NewServiceURL(*storageAccountURL, pipeline)
-	return &serviceURL, nil
 }

@@ -30,19 +30,16 @@ import (
 	. "github.com/gardener/gardener-extension-provider-azure/pkg/internal"
 )
 
-var _ = Describe("Azure Auth", func() {
+var _ = Describe("Service Account", func() {
 	var (
 		ctrl *gomock.Controller
 
-		ctx context.Context
-
 		clientAuth *ClientAuth
 		secret     *corev1.Secret
-		secretRef  corev1.SecretReference
 
-		name           string
-		namespace      string
-		subscriptionID string
+		secretName      string
+		secretNamespace string
+		secretRef       corev1.SecretReference
 	)
 
 	BeforeEach(func() {
@@ -63,12 +60,11 @@ var _ = Describe("Azure Auth", func() {
 			},
 		}
 
-		ctx = context.TODO()
-		namespace = "foo"
-		name = "bar"
+		secretNamespace = "foo"
+		secretName = "bar"
 		secretRef = corev1.SecretReference{
-			Namespace: namespace,
-			Name:      name,
+			Namespace: secretNamespace,
+			Name:      secretName,
 		}
 	})
 
@@ -86,12 +82,14 @@ var _ = Describe("Azure Auth", func() {
 
 	Describe("#GetClientAuthData", func() {
 		It("should retrieve the client auth data", func() {
-			var c = mockclient.NewMockClient(ctrl)
-			c.EXPECT().Get(ctx, kutil.Key(namespace, name), gomock.AssignableToTypeOf(&corev1.Secret{})).
-				DoAndReturn(func(_ context.Context, _ client.ObjectKey, actual *corev1.Secret) error {
-					*actual = *secret
-					return nil
-				})
+			var (
+				c   = mockclient.NewMockClient(ctrl)
+				ctx = context.TODO()
+			)
+			c.EXPECT().Get(ctx, kutil.Key(secretNamespace, secretName), gomock.AssignableToTypeOf(&corev1.Secret{})).DoAndReturn(func(_ context.Context, _ client.ObjectKey, actual *corev1.Secret) error {
+				*actual = *secret
+				return nil
+			})
 
 			actual, err := GetClientAuthData(ctx, c, secretRef)
 
@@ -100,20 +98,20 @@ var _ = Describe("Azure Auth", func() {
 		})
 	})
 
-	Describe("#GetAuthorizerAndSubscriptionID", func() {
-		It("should retrieve Azure autorizer and subscription id", func() {
-			var c = mockclient.NewMockClient(ctrl)
-			c.EXPECT().Get(ctx, kutil.Key(namespace, name), gomock.AssignableToTypeOf(&corev1.Secret{})).
-				DoAndReturn(func(_ context.Context, _ client.ObjectKey, actual *corev1.Secret) error {
-					*actual = *secret
-					return nil
-				})
+	Describe("#GetAzureClients", func() {
+		It("should return Azure Clients", func() {
+			var (
+				c   = mockclient.NewMockClient(ctrl)
+				ctx = context.TODO()
+			)
+			c.EXPECT().Get(ctx, kutil.Key(secretNamespace, secretName), gomock.AssignableToTypeOf(&corev1.Secret{})).DoAndReturn(func(_ context.Context, _ client.ObjectKey, actual *corev1.Secret) error {
+				*actual = *secret
+				return nil
+			})
 
-			authorizer, subscription, err := GetAuthorizerAndSubscriptionID(ctx, c, secretRef)
-
+			clients, err := GetAzureClients(ctx, c, secretRef)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(subscription).To(ContainSubstring(subscriptionID))
-			Expect(authorizer).NotTo(BeNil())
+			Expect(clients).NotTo(BeNil())
 		})
 	})
 })

@@ -55,4 +55,34 @@ var _ = Describe("Utils", func() {
 			Expect(AzureAPIErrorNotFound(detailedErr)).To(BeTrue())
 		})
 	})
+
+	Describe("#IsVMORequired", func() {
+		var infrastructureStatus *azureapi.InfrastructureStatus
+
+		BeforeEach(func() {
+			infrastructureStatus = &azureapi.InfrastructureStatus{
+				Zoned: false,
+			}
+		})
+
+		It("should require VMO", func() {
+			Expect(IsVMORequired(infrastructureStatus)).To(BeTrue())
+		})
+
+		It("should not require VMO for zoned cluster", func() {
+			infrastructureStatus.Zoned = true
+			Expect(IsVMORequired(infrastructureStatus)).To(BeFalse())
+		})
+
+		It("should not require VMO for a cluster with primary availabilityset (non zoned)", func() {
+			infrastructureStatus.AvailabilitySets = []azureapi.AvailabilitySet{
+				{
+					ID:      "/my/azure/availabilityset/id",
+					Name:    "my-availabilityset",
+					Purpose: "nodes",
+				},
+			}
+			Expect(IsVMORequired(infrastructureStatus)).To(BeFalse())
+		})
+	})
 })

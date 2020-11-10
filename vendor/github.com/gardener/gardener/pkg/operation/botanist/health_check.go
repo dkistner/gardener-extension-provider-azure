@@ -79,16 +79,14 @@ type HealthChecker struct {
 	conditionThresholds                map[gardencorev1beta1.ConditionType]time.Duration
 	staleExtensionHealthCheckThreshold *metav1.Duration
 	lastOperation                      *gardencorev1beta1.LastOperation
-	kubernetesVersion                  *semver.Version
 }
 
 // NewHealthChecker creates a new health checker.
-func NewHealthChecker(conditionThresholds map[gardencorev1beta1.ConditionType]time.Duration, healthCheckOutdatedThreshold *metav1.Duration, lastOperation *gardencorev1beta1.LastOperation, kubernetesVersion *semver.Version) *HealthChecker {
+func NewHealthChecker(conditionThresholds map[gardencorev1beta1.ConditionType]time.Duration, healthCheckOutdatedThreshold *metav1.Duration, lastOperation *gardencorev1beta1.LastOperation) *HealthChecker {
 	return &HealthChecker{
 		conditionThresholds:                conditionThresholds,
 		staleExtensionHealthCheckThreshold: healthCheckOutdatedThreshold,
 		lastOperation:                      lastOperation,
-		kubernetesVersion:                  kubernetesVersion,
 	}
 }
 
@@ -181,25 +179,6 @@ func (b *HealthChecker) checkNodes(condition gardencorev1beta1.Condition, object
 
 			c := b.FailedCondition(condition, "NodeUnhealthy", message, codes...)
 			return &c
-		}
-
-		sameMajorMinor, err := semver.NewConstraint("~ " + object.Status.NodeInfo.KubeletVersion)
-		if err != nil {
-			c := b.FailedCondition(condition, "VersionParseError", fmt.Sprintf("Error checking for same major minor Kubernetes version for node %q: %+v", object.Name, err))
-			return &c
-		}
-
-		if sameMajorMinor.Check(b.kubernetesVersion) {
-			equal, err := semver.NewConstraint("= " + object.Status.NodeInfo.KubeletVersion)
-			if err != nil {
-				c := b.FailedCondition(condition, "VersionParseError", fmt.Sprintf("Error checking for equal Kubernetes versions for node %q: %+v", object.Name, err))
-				return &c
-			}
-
-			if !equal.Check(b.kubernetesVersion) {
-				c := b.FailedCondition(condition, "KubeletVersionMismatch", fmt.Sprintf("The kubelet version for node %q (%s) does not match the desired Kubernetes version (v%s)", object.Name, object.Status.NodeInfo.KubeletVersion, b.kubernetesVersion.Original()))
-				return &c
-			}
 		}
 	}
 
@@ -383,9 +362,7 @@ func (b *HealthChecker) FailedCondition(condition gardencorev1beta1.Condition, r
 
 	case gardencorev1beta1.ConditionFalse:
 		threshold, ok := b.conditionThresholds[condition.Type]
-		if ok &&
-			((b.lastOperation != nil && b.lastOperation.State == gardencorev1beta1.LastOperationStateSucceeded && Now().UTC().Sub(b.lastOperation.LastUpdateTime.UTC()) <= threshold) ||
-				(reason != condition.Reason)) {
+		if ok && b.lastOperation != nil && b.lastOperation.State == gardencorev1beta1.LastOperationStateSucceeded && Now().UTC().Sub(b.lastOperation.LastUpdateTime.UTC()) <= threshold {
 			return gardencorev1beta1helper.UpdatedCondition(condition, gardencorev1beta1.ConditionProgressing, reason, message, codes...)
 		}
 	}
@@ -799,7 +776,7 @@ func (b *Botanist) healthChecks(
 	}
 
 	var (
-		checker               = NewHealthChecker(thresholdMappings, healthCheckOutdatedThreshold, b.Shoot.Info.Status.LastOperation, b.Shoot.KubernetesVersion)
+		checker               = NewHealthChecker(thresholdMappings, healthCheckOutdatedThreshold, b.Shoot.Info.Status.LastOperation)
 		seedDeploymentLister  = makeDeploymentLister(ctx, b.K8sSeedClient.Client(), b.Shoot.SeedNamespace, controlPlaneMonitoringLoggingSelector)
 		seedStatefulSetLister = makeStatefulSetLister(ctx, b.K8sSeedClient.Client(), b.Shoot.SeedNamespace, controlPlaneMonitoringLoggingSelector)
 		seedEtcdLister        = makeEtcdLister(ctx, b.K8sSeedClient.Client(), b.Shoot.SeedNamespace)

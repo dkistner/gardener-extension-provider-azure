@@ -18,8 +18,8 @@ import (
 	"context"
 
 	azureclient "github.com/gardener/gardener-extension-provider-azure/pkg/azure/client"
-
 	"github.com/gardener/gardener/extensions/pkg/controller/backupbucket"
+
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,57 +44,45 @@ func (a *actuator) InjectClient(client client.Client) error {
 }
 
 func (a *actuator) Reconcile(ctx context.Context, backupBucket *extensionsv1alpha1.BackupBucket) error {
-	var factory = azureclient.NewAzureClientFactory(a.client)
-
-	// If the generated secret in the backupbucket status not exists that means
-	// no backupbucket exists and it need to be created.
-	if backupBucket.Status.GeneratedSecretRef == nil {
-		storageAccountName, storageAccountKey, err := ensureBackupBucket(ctx, a.client, factory, backupBucket)
-		if err != nil {
-			return err
-		}
-		// Create the generated backupbucket secret.
-		if err := a.createBackupBucketGeneratedSecret(ctx, backupBucket, storageAccountName, storageAccountKey); err != nil {
-			return err
-		}
-	}
-
-	storageClient, err := factory.Storage(ctx, *backupBucket.Status.GeneratedSecretRef)
+	factory, err := azureclient.NewAzureClientFactory(ctx, a.client, getSecretReference(backupBucket))
 	if err != nil {
 		return err
 	}
-	return storageClient.CreateContainerIfNotExists(ctx, backupBucket.Name)
+
+	// If no generated secret exists that means no backupbucket exists. It need to be created.
+	if backupBucket.Status.GeneratedSecretRef == nil {
+		if err := ensureBackupBucket(ctx, a.client, factory, backupBucket); err != nil {
+			return err
+		}
+	}
+
+	return factory.Storage().CreateContainerIfNotExists(ctx, backupBucket.Name)
 }
 
 func (a *actuator) Delete(ctx context.Context, backupBucket *extensionsv1alpha1.BackupBucket) error {
-	// If the backupBucket has no generated secret in the status that means
-	// no backupbucket exists and therefore there is no need for deletion.
+	// If the backupBucket has no generatedSecret that means no backupbucket exists
+	// and therefore there is no need for deletion.
 	if backupBucket.Status.GeneratedSecretRef == nil {
 		return nil
 	}
 
-	var factory = azureclient.NewAzureClientFactory(a.client)
-
-	// Get a storage account client to delete the backup container in the storage account.
-	storageClient, err := factory.Storage(ctx, *backupBucket.Status.GeneratedSecretRef)
+	factory, err := azureclient.NewAzureClientFactory(ctx, a.client, *backupBucket.Status.GeneratedSecretRef)
 	if err != nil {
 		return err
 	}
-	if err := storageClient.DeleteContainerIfExists(ctx, backupBucket.Name); err != nil {
+
+	// Delete the backup containe in the storage account.
+	if err := factory.Storage().DeleteContainerIfExists(ctx, backupBucket.Name); err != nil {
 		return err
 	}
 
-	// Get resource group client and delete the resource group which contains the backup storage account.
-	groupClient, err := factory.Group(ctx, backupBucket.Spec.SecretRef)
-	if err != nil {
-		return err
-	}
-	if err := groupClient.DeleteIfExits(ctx, backupBucket.Name); err != nil {
+	// Delete the resource group which contains the backup storage account.
+	if err := factory.Group().DeleteIfExits(ctx, backupBucket.Name); err != nil {
 		return err
 	}
 
 	// Delete the generated backup secret in the garden namespace.
-	if err := a.deleteBackupBucketGeneratedSecret(ctx, backupBucket); err != nil {
+	if err := deleteBackupBucketGeneratedSecret(ctx, a.client, backupBucket); err != nil {
 		return err
 	}
 	return nil

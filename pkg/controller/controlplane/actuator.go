@@ -69,33 +69,6 @@ func (a *actuator) Delete(
 	cp *extensionsv1alpha1.ControlPlane,
 	cluster *extensionscontroller.Cluster,
 ) error {
-	// Delete all remaining remedy controller resources
-	if err := a.deleteRemedyControllerResources(ctx, cp); err != nil {
-		return err
-	}
-
-	// Call Delete on the composed Actuator
-	return a.Actuator.Delete(ctx, cp, cluster)
-}
-
-// Migrate reconciles the given controlplane and cluster, migrating the additional
-// control plane components as needed.
-// Before delegating to the composed Actuator, it ensures that all remedy controller resources have been deleted.
-func (a *actuator) Migrate(
-	ctx context.Context,
-	cp *extensionsv1alpha1.ControlPlane,
-	cluster *extensionscontroller.Cluster,
-) error {
-	// Delete all remaining remedy controller resources
-	if err := a.deleteRemedyControllerResources(ctx, cp); err != nil {
-		return err
-	}
-
-	// Call Migrate on the composed Actuator
-	return a.Actuator.Migrate(ctx, cp, cluster)
-}
-
-func (a *actuator) deleteRemedyControllerResources(ctx context.Context, cp *extensionsv1alpha1.ControlPlane) error {
 	// Forcefully delete all remaining remedy controller resources
 	a.logger.Info("Deleting all remaining remedy controller resources")
 	pubipList := &azurev1alpha1.PublicIPAddressList{}
@@ -132,7 +105,18 @@ func (a *actuator) deleteRemedyControllerResources(ctx context.Context, cp *exte
 		return errors.Wrap(err, "could not wait for virtualmachine resources to be deleted")
 	}
 
-	return nil
+	// Call Delete on the composed Actuator
+	return a.Actuator.Delete(ctx, cp, cluster)
+}
+
+// Migrate reconciles the given controlplane and cluster, deleting the additional
+// control plane components as needed.
+func (a *actuator) Migrate(
+	ctx context.Context,
+	cp *extensionsv1alpha1.ControlPlane,
+	cluster *extensionscontroller.Cluster,
+) error {
+	return a.Delete(ctx, cp, cluster)
 }
 
 func add(m map[string]string, key, value string) map[string]string {

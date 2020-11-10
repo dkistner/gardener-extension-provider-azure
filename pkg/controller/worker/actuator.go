@@ -20,7 +20,7 @@ import (
 	api "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
-	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
+	azureclient "github.com/gardener/gardener-extension-provider-azure/pkg/azure/client"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/imagevector"
 	extensionscontroller "github.com/gardener/gardener/extensions/pkg/controller"
 	"github.com/gardener/gardener/extensions/pkg/controller/common"
@@ -98,17 +98,12 @@ type workerDelegate struct {
 	machineDeployments worker.MachineDeployments
 	machineImages      []api.MachineImage
 
-	azureClients *internal.AzureClients
+	azureClientFactory azureclient.Factory
 }
 
 // NewWorkerDelegate creates a new context for a worker reconciliation.
 func NewWorkerDelegate(clientContext common.ClientContext, seedChartApplier gardener.ChartApplier, serverVersion string, worker *extensionsv1alpha1.Worker, cluster *extensionscontroller.Cluster) (genericactuator.WorkerDelegate, error) {
 	config, err := helper.CloudProfileConfigFromCluster(cluster)
-	if err != nil {
-		return nil, err
-	}
-
-	azureClients, err := internal.GetAzureClients(context.TODO(), clientContext.Client(), worker.Spec.SecretRef)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +118,6 @@ func NewWorkerDelegate(clientContext common.ClientContext, seedChartApplier gard
 		cluster:            cluster,
 		worker:             worker,
 
-		azureClients: azureClients,
+		azureClientFactory: azureclient.NewAzureClientFactory(clientContext.Client()),
 	}, nil
 }

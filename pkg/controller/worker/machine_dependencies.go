@@ -4,7 +4,7 @@ import (
 	"context"
 
 	azureapi "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
-	"github.com/gardener/gardener-extension-provider-azure/pkg/internal/machinesetclient"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
 
 	"github.com/pkg/errors"
 )
@@ -20,7 +20,7 @@ func (w *workerDelegate) DeployMachineDependencies(ctx context.Context) error {
 		return err
 	}
 
-	if machinesetclient.IsVMORequired(infrastructureStatus) {
+	if internal.IsVMORequired(infrastructureStatus) {
 		vmoDependencyList, err := w.reconcileVmoDependencies(ctx, infrastructureStatus, workerProviderStatus)
 		if err != nil {
 			return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, vmoDependencyList, err)
@@ -42,7 +42,7 @@ func (w *workerDelegate) CleanupMachineDependencies(ctx context.Context) error {
 		return err
 	}
 
-	if machinesetclient.IsVMORequired(infrastructureStatus) {
+	if internal.IsVMORequired(infrastructureStatus) {
 		newVmoDependencies, err := w.cleanupVmoDependencies(ctx, infrastructureStatus, workerProviderStatus)
 		if err != nil {
 			return w.updateMachineDependenciesStatus(ctx, workerProviderStatus, newVmoDependencies, err)

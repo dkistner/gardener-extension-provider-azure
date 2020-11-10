@@ -24,6 +24,9 @@ const (
 	// Name is the name of the Azure provider.
 	Name = "provider-azure"
 
+	// ShootVmoUsageAnnotation is a annotation assigned to the Shoot resource which indicate if vmo should be used.
+	ShootVmoUsageAnnotation = "alpha.azure.provider.extensions.gardener.cloud/vmo"
+
 	// CloudControllerManagerImageName is the name of the cloud-controller-manager image.
 	CloudControllerManagerImageName = "cloud-controller-manager"
 	// CSIDriverDiskImageName is the name of the csi-driver-disk image.
@@ -68,11 +71,14 @@ const (
 	// AzureBlobStorageHostName is the host name for azure blob storage service.
 	AzureBlobStorageHostName = "blob.core.windows.net"
 
+	// MachineSetTagKey is the name of the infrastructure resource tag for machine sets.
+	MachineSetTagKey = "machineset.azure.extensions.gardener.cloud"
+
 	// AllowUDPEgressName is the name of the service for allowing UDP egress traffic.
 	AllowUDPEgressName = "allow-udp-egress"
 	// CloudProviderConfigName is the name of the secret containing the cloud provider config.
 	CloudProviderConfigName = "cloud-provider-config"
-	// CloudProviderDiskConfigName is the name of the secret containing the cloud provider config for disk/volume handling.
+	// CloudProviderDiskConfigName is the name of the configmap containing the cloud provider config for disk/volume handling.
 	CloudProviderDiskConfigName = "cloud-provider-disk-config"
 	// CloudProviderConfigMapKey is the key storing the cloud provider config as value in the cloud provider configmap.
 	CloudProviderConfigMapKey = "cloudprovider.conf"
