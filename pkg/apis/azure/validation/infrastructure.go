@@ -15,7 +15,10 @@
 package validation
 
 import (
+	"fmt"
+
 	apisazure "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 	cidrvalidation "github.com/gardener/gardener/pkg/utils/validation/cidr"
 	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -27,7 +30,7 @@ const (
 )
 
 // ValidateInfrastructureConfig validates a InfrastructureConfig object.
-func ValidateInfrastructureConfig(infra *apisazure.InfrastructureConfig, nodesCIDR, podsCIDR, servicesCIDR *string, fldPath *field.Path) field.ErrorList {
+func ValidateInfrastructureConfig(infra *apisazure.InfrastructureConfig, nodesCIDR, podsCIDR, servicesCIDR *string, annotations map[string]string, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	var (
@@ -53,6 +56,11 @@ func ValidateInfrastructureConfig(infra *apisazure.InfrastructureConfig, nodesCI
 	// TODO: remove the following block and uncomment below blocks once deployment into existing resource groups works properly.
 	if infra.ResourceGroup != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("resourceGroup"), infra.ResourceGroup, "specifying an existing resource group is not supported yet"))
+	}
+
+	annotationValue, annotationExists := annotations[azure.ShootVmoUsageAnnotation]
+	if annotationExists && annotationValue == "true" && infra.Zoned {
+		allErrs = append(allErrs, field.Invalid(fldPath.Child("zoned"), infra.Zoned, fmt.Sprintf("specifying a zoned cluster and having a the %q annotation is not possible", azure.ShootVmoUsageAnnotation)))
 	}
 
 	networksPath := fldPath.Child("networks")
@@ -93,7 +101,7 @@ func ValidateInfrastructureConfig(infra *apisazure.InfrastructureConfig, nodesCI
 	// we would need Standard LoadBalancers also in combination with AvailabilitySets.
 	// For the multiple AvailabilitySet approach we would always need
 	// a Standard LoadBalancer and a NatGateway.
-	if !infra.Zoned && infra.Networks.NatGateway != nil {
+	if !infra.Zoned && !annotationExists && infra.Networks.NatGateway != nil {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("networks", "natGateway"), infra.Networks.NatGateway, "NatGateway is currently only supported for zoned cluster"))
 	}
 
@@ -115,15 +123,46 @@ func ValidateInfrastructureConfig(infra *apisazure.InfrastructureConfig, nodesCI
 }
 
 // ValidateInfrastructureConfigUpdate validates a InfrastructureConfig object.
-func ValidateInfrastructureConfigUpdate(oldConfig, newConfig *apisazure.InfrastructureConfig, fldPath *field.Path) field.ErrorList {
+func ValidateInfrastructureConfigUpdate(oldConfig, newConfig *apisazure.InfrastructureConfig, providerPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	allErrs = append(allErrs, apivalidation.ValidateImmutableField(newConfig.ResourceGroup, oldConfig.ResourceGroup, fldPath.Child("resourceGroup"))...)
-	allErrs = append(allErrs, apivalidation.ValidateImmutableField(newConfig.Networks.VNet, oldConfig.Networks.VNet, fldPath.Child("networks").Child("vnet"))...)
-	allErrs = append(allErrs, apivalidation.ValidateImmutableField(newConfig.Networks.Workers, oldConfig.Networks.Workers, fldPath.Child("networks").Child("workers"))...)
+	allErrs = append(allErrs, apivalidation.ValidateImmutableField(newConfig.ResourceGroup, oldConfig.ResourceGroup, providerPath.Child("resourceGroup"))...)
+	allErrs = append(allErrs, apivalidation.ValidateImmutableField(newConfig.Networks.VNet, oldConfig.Networks.VNet, providerPath.Child("networks").Child("vnet"))...)
+	allErrs = append(allErrs, apivalidation.ValidateImmutableField(newConfig.Networks.Workers, oldConfig.Networks.Workers, providerPath.Child("networks").Child("workers"))...)
 
 	if oldConfig.Zoned && !newConfig.Zoned {
-		allErrs = append(allErrs, field.Forbidden(fldPath.Child("zoned"), "moving a zoned cluster to a non-zoned cluster is not allowed"))
+		allErrs = append(allErrs, field.Forbidden(providerPath.Child("zoned"), "moving a zoned cluster to a non-zoned cluster is not allowed"))
+	}
+
+	return allErrs
+}
+
+// ValidateVMOConfigurationUpdate validates the VMO configuration on update.
+func ValidateVMOConfigurationUpdate(oldConfig, newConfig *apisazure.InfrastructureConfig, oldShootAnnotations, newShootAnnotation map[string]string, providerPath, metaDataPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+
+	// Check if old shoot has not the vmo annotation and forbid to add it.
+	if _, exists := oldShootAnnotations[azure.ShootVmoUsageAnnotation]; !exists {
+		_, annotationExists := newShootAnnotation[azure.ShootVmoUsageAnnotation]
+		if annotationExists {
+			allErrs = append(allErrs, field.Forbidden(metaDataPath.Child("annotations"), fmt.Sprintf("not allowed to add vmo annotation %q to an already existing cluster", azure.ShootVmoUsageAnnotation)))
+		}
+	}
+
+	// Check if the olf shoot has the vmo annotation and forbid to remove or modify it. Also forbid to change to move the new shoot to a zoned if annotated to be a vmo one.
+	if value, exists := oldShootAnnotations[azure.ShootVmoUsageAnnotation]; exists && value == "true" {
+		if newConfig.Zoned {
+			allErrs = append(allErrs, field.Invalid(providerPath.Child("zoned"), newConfig.Zoned, fmt.Sprintf("not allowed to switch to a zoned cluster when already using a vmo based cluster (via annotation %q)", azure.ShootVmoUsageAnnotation)))
+		}
+
+		annotationValue, annotationExists := newShootAnnotation[azure.ShootVmoUsageAnnotation]
+		if !annotationExists {
+
+			allErrs = append(allErrs, field.Forbidden(metaDataPath.Child("annotations"), fmt.Sprintf("not allowed to remove vmo annotation %q if it is already in use", azure.ShootVmoUsageAnnotation)))
+		}
+		if annotationExists && annotationValue != "true" {
+			allErrs = append(allErrs, field.Invalid(metaDataPath.Child("annotations"), annotationValue, fmt.Sprintf("not allowed to modify the vmo annotation %q if it is already in use", azure.ShootVmoUsageAnnotation)))
+		}
 	}
 
 	return allErrs

@@ -16,7 +16,6 @@ package worker_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -28,7 +27,6 @@ import (
 	. "github.com/gardener/gardener-extension-provider-azure/pkg/controller/worker"
 
 	extensionscontroller "github.com/gardener/gardener/extensions/pkg/controller"
-	"github.com/gardener/gardener/extensions/pkg/controller/common"
 	"github.com/gardener/gardener/extensions/pkg/controller/worker"
 	genericworkeractuator "github.com/gardener/gardener/extensions/pkg/controller/worker/genericactuator"
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -37,6 +35,7 @@ import (
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	mockclient "github.com/gardener/gardener/pkg/mock/controller-runtime/client"
 	mockkubernetes "github.com/gardener/gardener/pkg/mock/gardener/client/kubernetes"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	machinev1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
@@ -44,9 +43,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/utils/pointer"
 )
 
 var _ = Describe("Machines", func() {
@@ -55,6 +53,9 @@ var _ = Describe("Machines", func() {
 		c            *mockclient.MockClient
 		statusWriter *mockclient.MockStatusWriter
 		chartApplier *mockkubernetes.MockChartApplier
+
+		ctx               context.Context
+		namespace, region string
 	)
 
 	BeforeEach(func() {
@@ -63,6 +64,13 @@ var _ = Describe("Machines", func() {
 		c = mockclient.NewMockClient(ctrl)
 		chartApplier = mockkubernetes.NewMockChartApplier(ctrl)
 		statusWriter = mockclient.NewMockStatusWriter(ctrl)
+
+		// Let the client always the mocked status writer when Status() is called.
+		c.EXPECT().Status().AnyTimes().Return(statusWriter)
+
+		ctx = context.TODO()
+		namespace = "shoot--foobar--azure"
+		region = "westeurope"
 	})
 
 	AfterEach(func() {
@@ -70,37 +78,32 @@ var _ = Describe("Machines", func() {
 	})
 
 	Context("workerDelegate", func() {
-		workerDelegate, _ := NewWorkerDelegate(common.NewClientContext(nil, nil, nil), nil, "", nil, nil)
-
 		Describe("#MachineClassKind", func() {
 			It("should return the correct kind of the machine class", func() {
+				w := makeWorker(namespace, region, nil, nil)
+				workerDelegate := wrapNewWorkerDelegate(c, nil, w, nil, nil)
 				Expect(workerDelegate.MachineClassKind()).To(Equal("AzureMachineClass"))
 			})
 		})
 
 		Describe("#MachineClass", func() {
 			It("should return the correct type for the machine class", func() {
+				w := makeWorker(namespace, region, nil, nil)
+				workerDelegate := wrapNewWorkerDelegate(c, nil, w, nil, nil)
 				Expect(workerDelegate.MachineClass()).To(Equal(&machinev1alpha1.AzureMachineClass{}))
 			})
 		})
 
 		Describe("#MachineClassList", func() {
 			It("should return the correct type for the machine class list", func() {
+				w := makeWorker(namespace, region, nil, nil)
+				workerDelegate := wrapNewWorkerDelegate(c, nil, w, nil, nil)
 				Expect(workerDelegate.MachineClassList()).To(Equal(&machinev1alpha1.AzureMachineClassList{}))
 			})
 		})
 
 		Describe("#GenerateMachineDeployments, #DeployMachineClasses", func() {
 			var (
-				namespace        string
-				cloudProfileName string
-
-				azureClientID       string
-				azureClientSecret   string
-				azureSubscriptionID string
-				azureTenantID       string
-				region              string
-
 				machineImageName      string
 				machineImageVersion   string
 				machineImageVersionID string
@@ -137,34 +140,21 @@ var _ = Describe("Machines", func() {
 				maxSurgePool2       intstr.IntOrString
 				maxUnavailablePool2 intstr.IntOrString
 
-				workerPoolHash1 string
-				workerPoolHash2 string
-
 				labels map[string]string
-
-				machineConfiguration *machinev1alpha1.MachineConfiguration
 
 				shootVersionMajorMinor string
 				shootVersion           string
-				scheme                 *runtime.Scheme
-				decoder                runtime.Decoder
-				clusterWithoutImages   *extensionscontroller.Cluster
-				cluster                *extensionscontroller.Cluster
-				w                      *extensionsv1alpha1.Worker
 
-				boolTrue = true
+				machineImages []apiv1alpha1.MachineImages
+				machineTypes  []apiv1alpha1.MachineType
+
+				pool1, pool2         extensionsv1alpha1.WorkerPool
+				infrastructureStatus *apisazure.InfrastructureStatus
+				w                    *extensionsv1alpha1.Worker
+				cluster              *extensionscontroller.Cluster
 			)
 
 			BeforeEach(func() {
-				namespace = "shoot--foobar--azure"
-				cloudProfileName = "azure"
-
-				region = "westeurope"
-				azureClientID = "client-id"
-				azureClientSecret = "client-secret"
-				azureSubscriptionID = "1234"
-				azureTenantID = "1234"
-
 				machineImageName = "my-os"
 				machineImageVersion = "1"
 				machineImageVersionID = "2"
@@ -196,7 +186,6 @@ var _ = Describe("Machines", func() {
 				maxUnavailablePool1 = intstr.FromInt(2)
 
 				labels = map[string]string{"component": "TiDB"}
-				machineConfiguration = &machinev1alpha1.MachineConfiguration{}
 
 				namePool2 = "pool-2"
 				minPool2 = 30
@@ -207,165 +196,90 @@ var _ = Describe("Machines", func() {
 				shootVersionMajorMinor = "1.2"
 				shootVersion = shootVersionMajorMinor + ".3"
 
-				clusterWithoutImages = &extensionscontroller.Cluster{
-					Shoot: &gardencorev1beta1.Shoot{
-						Spec: gardencorev1beta1.ShootSpec{
-							Kubernetes: gardencorev1beta1.Kubernetes{
-								Version: shootVersion,
-							},
-						},
-					},
-				}
-				cloudProfileConfig := &apiv1alpha1.CloudProfileConfig{
-					TypeMeta: metav1.TypeMeta{
-						APIVersion: apiv1alpha1.SchemeGroupVersion.String(),
-						Kind:       "CloudProfileConfig",
-					},
-					MachineImages: []apiv1alpha1.MachineImages{
-						{
-							Name: machineImageName,
-							Versions: []apiv1alpha1.MachineImageVersion{
-								{
-									Version:               machineImageVersion,
-									URN:                   &machineImageURN,
-									AcceleratedNetworking: &boolTrue,
-								},
-								{
-									Version: machineImageVersionID,
-									ID:      &machineImageID,
-								},
-							},
-						},
-					},
-					MachineTypes: []apiv1alpha1.MachineType{
-						{
-							Name:                  machineType,
-							AcceleratedNetworking: &boolTrue,
-						},
-					},
-				}
-				cloudProfileConfigJSON, _ := json.Marshal(cloudProfileConfig)
-				cluster = &extensionscontroller.Cluster{
-					CloudProfile: &gardencorev1beta1.CloudProfile{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: cloudProfileName,
-						},
-						Spec: gardencorev1beta1.CloudProfileSpec{
-							ProviderConfig: &runtime.RawExtension{
-								Raw: cloudProfileConfigJSON,
-							},
-						},
-					},
-					Shoot: clusterWithoutImages.Shoot,
-				}
-
-				w = &extensionsv1alpha1.Worker{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: namespace,
-					},
-					Spec: extensionsv1alpha1.WorkerSpec{
-						SecretRef: corev1.SecretReference{
-							Name:      "secret",
-							Namespace: namespace,
-						},
-						Region:       region,
-						SSHPublicKey: []byte(sshKey),
-						InfrastructureProviderStatus: &runtime.RawExtension{
-							Raw: encode(&apisazure.InfrastructureStatus{
-								ResourceGroup: apisazure.ResourceGroup{
-									Name: resourceGroupName,
-								},
-								Networks: apisazure.NetworkStatus{
-									VNet: apisazure.VNetStatus{
-										Name:          vnetName,
-										ResourceGroup: &vnetResourceGroupName,
-									},
-									Subnets: []apisazure.Subnet{
-										{
-											Purpose: apisazure.PurposeNodes,
-											Name:    subnetName,
-										},
-									},
-								},
-								AvailabilitySets: []apisazure.AvailabilitySet{
-									{
-										Purpose: apisazure.PurposeNodes,
-										ID:      availabilitySetID,
-									},
-								},
-								Identity: &apisazure.IdentityStatus{
-									ID: identityID,
-								},
-							}),
-						},
-						Pools: []extensionsv1alpha1.WorkerPool{
+				machineImages = []apiv1alpha1.MachineImages{
+					{
+						Name: machineImageName,
+						Versions: []apiv1alpha1.MachineImageVersion{
 							{
-								Name:           namePool1,
-								Minimum:        minPool1,
-								Maximum:        maxPool1,
-								MaxSurge:       maxSurgePool1,
-								MaxUnavailable: maxUnavailablePool1,
-								MachineType:    machineType,
-								MachineImage: extensionsv1alpha1.MachineImage{
-									Name:    machineImageName,
-									Version: machineImageVersion,
-								},
-								UserData: userData,
-								Volume: &extensionsv1alpha1.Volume{
-									Size: fmt.Sprintf("%dGi", volumeSize),
-								},
-								DataVolumes: []extensionsv1alpha1.DataVolume{
-									{
-										Name: dataVolume1Name,
-										Size: fmt.Sprintf("%dGi", dataVolume1Size),
-									},
-									{
-										Name: dataVolume2Name,
-										Size: fmt.Sprintf("%dGi", dataVolume2Size),
-										Type: &dataVolume2Type,
-									},
-								},
-								Labels: labels,
+								Version:               machineImageVersion,
+								URN:                   &machineImageURN,
+								AcceleratedNetworking: pointer.BoolPtr(true),
 							},
 							{
-								Name:           namePool2,
-								Minimum:        minPool2,
-								Maximum:        maxPool2,
-								MaxSurge:       maxSurgePool2,
-								MaxUnavailable: maxUnavailablePool2,
-								MachineType:    machineType,
-								MachineImage: extensionsv1alpha1.MachineImage{
-									Name:    machineImageName,
-									Version: machineImageVersionID,
-								},
-								UserData: userData,
-								Volume: &extensionsv1alpha1.Volume{
-									Size: fmt.Sprintf("%dGi", volumeSize),
-									Type: &volumeType,
-								},
-								Labels: labels,
+								Version: machineImageVersionID,
+								ID:      &machineImageID,
 							},
 						},
 					},
 				}
+				machineTypes = []apiv1alpha1.MachineType{
+					{
+						Name:                  machineType,
+						AcceleratedNetworking: pointer.BoolPtr(true),
+					},
+				}
 
-				scheme = runtime.NewScheme()
-				_ = apisazure.AddToScheme(scheme)
-				_ = apiv1alpha1.AddToScheme(scheme)
-				decoder = serializer.NewCodecFactory(scheme).UniversalDecoder()
+				pool1 = extensionsv1alpha1.WorkerPool{
+					Name:           namePool1,
+					Minimum:        minPool1,
+					Maximum:        maxPool1,
+					MaxSurge:       maxSurgePool1,
+					MaxUnavailable: maxUnavailablePool1,
+					MachineType:    machineType,
+					MachineImage: extensionsv1alpha1.MachineImage{
+						Name:    machineImageName,
+						Version: machineImageVersion,
+					},
+					UserData: userData,
+					Volume: &extensionsv1alpha1.Volume{
+						Size: fmt.Sprintf("%dGi", volumeSize),
+					},
+					DataVolumes: []extensionsv1alpha1.DataVolume{
+						{
+							Name: dataVolume1Name,
+							Size: fmt.Sprintf("%dGi", dataVolume1Size),
+						},
+						{
+							Name: dataVolume2Name,
+							Size: fmt.Sprintf("%dGi", dataVolume2Size),
+							Type: &dataVolume2Type,
+						},
+					},
+					Labels: labels,
+				}
 
-				workerPoolHash1, _ = worker.WorkerPoolHash(w.Spec.Pools[0], cluster, identityID, fmt.Sprintf("%dGi", dataVolume1Size), fmt.Sprintf("%dGi", dataVolume2Size), dataVolume2Type)
-				workerPoolHash2, _ = worker.WorkerPoolHash(w.Spec.Pools[1], cluster, identityID)
+				pool2 = extensionsv1alpha1.WorkerPool{
+					Name:           namePool2,
+					Minimum:        minPool2,
+					Maximum:        maxPool2,
+					MaxSurge:       maxSurgePool2,
+					MaxUnavailable: maxUnavailablePool2,
+					MachineType:    machineType,
+					MachineImage: extensionsv1alpha1.MachineImage{
+						Name:    machineImageName,
+						Version: machineImageVersionID,
+					},
+					UserData: userData,
+					Volume: &extensionsv1alpha1.Volume{
+						Size: fmt.Sprintf("%dGi", volumeSize),
+						Type: &volumeType,
+					},
+					Labels: labels,
+				}
 
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, clusterWithoutImages)
+				cluster = makeCluster(shootVersion, region, machineTypes, machineImages, 0)
+				infrastructureStatus = makeInfrastructureStatus(resourceGroupName, vnetName, subnetName, false, &vnetResourceGroupName, &availabilitySetID, &identityID)
+				w = makeWorker(namespace, region, &sshKey, infrastructureStatus, pool1, pool2)
 			})
 
 			Describe("machine images", func() {
 				var (
 					urnMachineClass     map[string]interface{}
-					imageIdMachineClass map[string]interface{}
+					imageIDMachineClass map[string]interface{}
 					machineDeployments  worker.MachineDeployments
 					machineClasses      map[string]interface{}
+
+					workerPoolHash1, workerPoolHash2 string
 				)
 
 				BeforeEach(func() {
@@ -386,8 +300,11 @@ var _ = Describe("Machines", func() {
 							"subnet":            subnetName,
 							"vnetResourceGroup": vnetResourceGroupName,
 						},
-						"availabilitySetID": availabilitySetID,
-						"tags":              vmTags,
+						"machineSet": map[string]interface{}{
+							"id":   availabilitySetID,
+							"kind": "availabilityset",
+						},
+						"tags": vmTags,
 						"secret": map[string]interface{}{
 							"cloudConfig": string(userData),
 						},
@@ -404,14 +321,17 @@ var _ = Describe("Machines", func() {
 						"urn": machineImageURN,
 					}
 
-					imageIdMachineClass = copyMachineClass(defaultMachineClass)
-					imageIdMachineClass["image"] = map[string]interface{}{
+					imageIDMachineClass = copyMachineClass(defaultMachineClass)
+					imageIDMachineClass["image"] = map[string]interface{}{
 						"id": machineImageID,
 					}
 
+					workerPoolHash1, _ = worker.WorkerPoolHash(w.Spec.Pools[0], cluster, fmt.Sprintf("%dGi", dataVolume1Size), fmt.Sprintf("%dGi", dataVolume2Size), dataVolume2Type, identityID)
+					workerPoolHash2, _ = worker.WorkerPoolHash(w.Spec.Pools[1], cluster, identityID)
+
 					var (
 						machineClassPool1 = copyMachineClass(urnMachineClass)
-						machineClassPool2 = copyMachineClass(imageIdMachineClass)
+						machineClassPool2 = copyMachineClass(imageIDMachineClass)
 
 						machineClassNamePool1 = fmt.Sprintf("%s-%s", namespace, namePool1)
 						machineClassNamePool2 = fmt.Sprintf("%s-%s", namespace, namePool2)
@@ -420,8 +340,8 @@ var _ = Describe("Machines", func() {
 						machineClassWithHashPool2 = fmt.Sprintf("%s-%s", machineClassNamePool2, workerPoolHash2)
 					)
 
-					addNameAndSecretsToMachineClass(machineClassPool1, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID, machineClassWithHashPool1)
-					addNameAndSecretsToMachineClass(machineClassPool2, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID, machineClassWithHashPool2)
+					addNameAndSecretsToMachineClass(machineClassPool1, machineClassWithHashPool1)
+					addNameAndSecretsToMachineClass(machineClassPool2, machineClassWithHashPool2)
 
 					machineClassPool1["dataDisks"] = []map[string]interface{}{
 						{
@@ -458,7 +378,7 @@ var _ = Describe("Machines", func() {
 							MaxSurge:             maxSurgePool1,
 							MaxUnavailable:       maxUnavailablePool1,
 							Labels:               labels,
-							MachineConfiguration: machineConfiguration,
+							MachineConfiguration: &machinev1alpha1.MachineConfiguration{},
 						},
 						{
 							Name:                 machineClassNamePool2,
@@ -469,97 +389,72 @@ var _ = Describe("Machines", func() {
 							MaxSurge:             maxSurgePool2,
 							MaxUnavailable:       maxUnavailablePool2,
 							Labels:               labels,
-							MachineConfiguration: machineConfiguration,
+							MachineConfiguration: &machinev1alpha1.MachineConfiguration{},
 						},
 					}
 
 				})
 
 				It("should return the expected machine deployments for profile image types", func() {
-					workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, cluster)
-
-					expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
+					workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
 					// Test workerDelegate.DeployMachineClasses()
-					chartApplier.EXPECT().Apply(context.TODO(), filepath.Join(azure.InternalChartsPath, "machineclass"), namespace, "machineclass", kubernetes.Values(machineClasses))
-
-					err := workerDelegate.DeployMachineClasses(context.TODO())
+					chartApplier.EXPECT().Apply(ctx, filepath.Join(azure.InternalChartsPath, "machineclass"), namespace, "machineclass", kubernetes.Values(machineClasses)).Return(nil)
+					err := workerDelegate.DeployMachineClasses(ctx)
 					Expect(err).NotTo(HaveOccurred())
 
 					// Test workerDelegate.UpdateMachineImagesStatus()
-
-					expectStatusContainsMachineImages(c, statusWriter, w, []apiv1alpha1.MachineImage{
-						{
-							Name:                  machineImageName,
-							Version:               machineImageVersion,
-							URN:                   &machineImageURN,
-							AcceleratedNetworking: &boolTrue,
-						},
-						{
-							Name:    machineImageName,
-							Version: machineImageVersionID,
-							ID:      &machineImageID,
-						},
-					})
-					err = workerDelegate.UpdateMachineImagesStatus(context.TODO())
+					expectWorkerProviderStatusUpdateToSucceed(ctx, c, statusWriter)
+					err = workerDelegate.UpdateMachineImagesStatus(ctx)
 					Expect(err).NotTo(HaveOccurred())
 
 					// Test workerDelegate.GenerateMachineDeployments()
-
-					result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+					result, err := workerDelegate.GenerateMachineDeployments(ctx)
 					Expect(err).NotTo(HaveOccurred())
 					Expect(result).To(Equal(machineDeployments))
 				})
 			})
 
 			It("should fail because the secret cannot be read", func() {
-				c.EXPECT().Get(context.TODO(), gomock.Any(), gomock.AssignableToTypeOf(&corev1.Secret{})).Return(fmt.Errorf("error"))
+				c.EXPECT().Get(ctx, kutil.Key(w.Spec.SecretRef.Namespace, w.Spec.SecretRef.Name), &corev1.Secret{}).Return(fmt.Errorf("error"))
+				cluster = makeCluster(shootVersion, region, nil, nil, 0)
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 			})
 
 			It("should fail because the version is invalid", func() {
-				expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
+				cluster = makeCluster("invalid", region, nil, nil, 0)
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				clusterWithoutImages.Shoot.Spec.Kubernetes.Version = "invalid"
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, cluster)
-
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 			})
 
 			It("should fail because the infrastructure status cannot be decoded", func() {
-				expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
-
 				w.Spec.InfrastructureProviderStatus = &runtime.RawExtension{}
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, cluster)
-
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 			})
 
 			It("should fail because the nodes subnet cannot be found", func() {
-				expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
-
 				w.Spec.InfrastructureProviderStatus = &runtime.RawExtension{
 					Raw: encode(&apisazure.InfrastructureStatus{}),
 				}
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, cluster)
-
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 			})
 
 			It("should fail because the nodes availability set cannot be found", func() {
-				expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
-
 				w.Spec.InfrastructureProviderStatus = &runtime.RawExtension{
 					Raw: encode(&apisazure.InfrastructureStatus{
 						Networks: apisazure.NetworkStatus{
@@ -570,46 +465,44 @@ var _ = Describe("Machines", func() {
 								},
 							},
 						},
+						AvailabilitySets: []apisazure.AvailabilitySet{
+							{Purpose: "not-nodes"},
+						},
 					}),
 				}
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, cluster)
-
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 			})
 
 			It("should fail because the machine image information cannot be found", func() {
-				expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
+				cluster = makeCluster(shootVersion, region, nil, nil, 0)
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, clusterWithoutImages)
-
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 			})
 
 			It("should fail because the volume size cannot be decoded", func() {
-				expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
-
 				w.Spec.Pools[0].Volume.Size = "not-decodeable"
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, cluster)
-
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 			})
 
 			It("should set expected machineControllerManager settings on machine deployment", func() {
-				expectGetSecretCallToWork(c, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID)
-
-				testDrainTimeout := metav1.Duration{Duration: 10 * time.Minute}
-				testHealthTimeout := metav1.Duration{Duration: 20 * time.Minute}
-				testCreationTimeout := metav1.Duration{Duration: 30 * time.Minute}
-				testMaxEvictRetries := int32(30)
-				testNodeConditions := []string{"ReadonlyFilesystem", "KernelDeadlock", "DiskPressure"}
+				var (
+					testDrainTimeout    = metav1.Duration{Duration: 10 * time.Minute}
+					testHealthTimeout   = metav1.Duration{Duration: 20 * time.Minute}
+					testCreationTimeout = metav1.Duration{Duration: 30 * time.Minute}
+					testMaxEvictRetries = int32(30)
+					testNodeConditions  = []string{"ReadonlyFilesystem", "KernelDeadlock", "DiskPressure"}
+				)
 				w.Spec.Pools[0].MachineControllerManagerSettings = &gardencorev1beta1.MachineControllerManagerSettings{
 					MachineDrainTimeout:    &testDrainTimeout,
 					MachineCreationTimeout: &testCreationTimeout,
@@ -617,10 +510,9 @@ var _ = Describe("Machines", func() {
 					MaxEvictRetries:        &testMaxEvictRetries,
 					NodeConditions:         testNodeConditions,
 				}
+				workerDelegate := wrapNewWorkerDelegate(c, chartApplier, w, cluster, nil)
 
-				workerDelegate, _ = NewWorkerDelegate(common.NewClientContext(c, scheme, decoder), chartApplier, "", w, cluster)
-
-				result, err := workerDelegate.GenerateMachineDeployments(context.TODO())
+				result, err := workerDelegate.GenerateMachineDeployments(ctx)
 				resultSettings := result[0].MachineConfiguration
 				resultNodeConditions := strings.Join(testNodeConditions, ",")
 
@@ -641,11 +533,6 @@ var _ = Describe("Machines", func() {
 	})
 })
 
-func encode(obj runtime.Object) []byte {
-	data, _ := json.Marshal(obj)
-	return data
-}
-
 func copyMachineClass(def map[string]interface{}) map[string]interface{} {
 	out := make(map[string]interface{}, len(def))
 
@@ -656,47 +543,13 @@ func copyMachineClass(def map[string]interface{}) map[string]interface{} {
 	return out
 }
 
-func expectGetSecretCallToWork(c *mockclient.MockClient, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID string) {
-	c.EXPECT().
-		Get(context.TODO(), gomock.Any(), gomock.AssignableToTypeOf(&corev1.Secret{})).
-		DoAndReturn(func(_ context.Context, _ client.ObjectKey, secret *corev1.Secret) error {
-			secret.Data = map[string][]byte{
-				azure.ClientIDKey:       []byte(azureClientID),
-				azure.ClientSecretKey:   []byte(azureClientSecret),
-				azure.SubscriptionIDKey: []byte(azureSubscriptionID),
-				azure.TenantIDKey:       []byte(azureTenantID),
-			}
-			return nil
-		})
-}
-
-func expectStatusContainsMachineImages(c *mockclient.MockClient, statusWriter *mockclient.MockStatusWriter, worker *extensionsv1alpha1.Worker, images []apiv1alpha1.MachineImage) {
-	expectedProviderStatus := &apiv1alpha1.WorkerStatus{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: apiv1alpha1.SchemeGroupVersion.String(),
-			Kind:       "WorkerStatus",
-		},
-		MachineImages: images,
-	}
-	workerWithExpectedStatus := worker.DeepCopy()
-	workerWithExpectedStatus.Status.ProviderStatus = &runtime.RawExtension{
-		Object: expectedProviderStatus,
-	}
-
-	c.EXPECT().Get(context.TODO(), gomock.Any(), gomock.AssignableToTypeOf(&extensionsv1alpha1.Worker{})).DoAndReturn(func(_ context.Context, _ client.ObjectKey, worker *extensionsv1alpha1.Worker) error {
-		return nil
-	})
-	c.EXPECT().Status().Return(statusWriter)
-	statusWriter.EXPECT().Update(context.TODO(), workerWithExpectedStatus).Return(nil)
-}
-
-func addNameAndSecretsToMachineClass(class map[string]interface{}, azureClientID, azureClientSecret, azureSubscriptionID, azureTenantID, name string) {
+func addNameAndSecretsToMachineClass(class map[string]interface{}, name string) {
 	class["name"] = name
 	class["labels"] = map[string]string{
 		v1beta1constants.GardenerPurpose: genericworkeractuator.GardenPurposeMachineClass,
 	}
-	class["secret"].(map[string]interface{})[azure.ClientIDKey] = azureClientID
-	class["secret"].(map[string]interface{})[azure.ClientSecretKey] = azureClientSecret
-	class["secret"].(map[string]interface{})[azure.SubscriptionIDKey] = azureSubscriptionID
-	class["secret"].(map[string]interface{})[azure.TenantIDKey] = azureTenantID
+	class["secret"].(map[string]interface{})[azure.ClientIDKey] = "client-id"
+	class["secret"].(map[string]interface{})[azure.ClientSecretKey] = "client-secret"
+	class["secret"].(map[string]interface{})[azure.SubscriptionIDKey] = "1234"
+	class["secret"].(map[string]interface{})[azure.TenantIDKey] = "1234"
 }

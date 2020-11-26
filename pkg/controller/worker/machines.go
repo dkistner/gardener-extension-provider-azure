@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	azureapi "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	azureapihelper "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
@@ -96,13 +97,17 @@ type zoneInfo struct {
 	count int32
 }
 
+type machineSetInfo struct {
+	id   string
+	kind string
+}
+
 func (w *workerDelegate) generateMachineConfig(ctx context.Context) error {
 	var (
 		acceleratedNetworkAllowed = true
 		machineDeployments        = worker.MachineDeployments{}
 		machineClasses            []map[string]interface{}
 		machineImages             []azureapi.MachineImage
-		nodesAvailabilitySet      *azureapi.AvailabilitySet
 	)
 
 	machineClassSecretData, err := w.generateMachineClassSecretData(ctx)
@@ -110,8 +115,13 @@ func (w *workerDelegate) generateMachineConfig(ctx context.Context) error {
 		return err
 	}
 
-	infrastructureStatus := &azureapi.InfrastructureStatus{}
-	if _, _, err := w.Decoder().Decode(w.worker.Spec.InfrastructureProviderStatus.Raw, nil, infrastructureStatus); err != nil {
+	infrastructureStatus, err := w.decodeAzureInfrastructureStatus()
+	if err != nil {
+		return err
+	}
+
+	workerStatus, err := w.decodeWorkerProviderStatus()
+	if err != nil {
 		return err
 	}
 
@@ -120,26 +130,16 @@ func (w *workerDelegate) generateMachineConfig(ctx context.Context) error {
 		return err
 	}
 
-	// The AvailabilitySet will be only used for non zoned Shoots.
-	if !infrastructureStatus.Zoned {
-		nodesAvailabilitySet, err = azureapihelper.FindAvailabilitySetByPurpose(infrastructureStatus.AvailabilitySets, azureapi.PurposeNodes)
+	var vmoRequired = helper.IsVMORequired(infrastructureStatus)
+	for _, pool := range w.worker.Spec.Pools {
+		// Get the vmo dependency from the worker status if exists.
+		vmoDependency, err := determineWorkerPoolVmoDependency(workerStatus, pool.Name)
 		if err != nil {
 			return err
 		}
 
-		// Do not enable accelerated networking for AvSet cluster.
-		// This is necessary to avoid `ExistingAvailabilitySetWasNotDeployedOnAcceleratedNetworkingEnabledCluster` error.
-		acceleratedNetworkAllowed = false
-	}
-
-	for _, pool := range w.worker.Spec.Pools {
-		var additionalHashData []string
-		if infrastructureStatus.Identity != nil {
-			additionalHashData = append(additionalHashData, infrastructureStatus.Identity.ID)
-		}
-		additionalHashData = append(additionalHashData, computeAdditionalHashData(pool)...)
-
-		workerPoolHash, err := worker.WorkerPoolHash(pool, w.cluster, additionalHashData...)
+		// Generate the hash for the worker pool.
+		workerPoolHash, err := w.generateWorkerPoolHash(pool, infrastructureStatus, vmoDependency)
 		if err != nil {
 			return err
 		}
@@ -168,7 +168,7 @@ func (w *workerDelegate) generateMachineConfig(ctx context.Context) error {
 			return err
 		}
 
-		generateMachineClassAndDeployment := func(zone *zoneInfo, availabilitySetID *string) (worker.MachineDeployment, map[string]interface{}) {
+		generateMachineClassAndDeployment := func(zone *zoneInfo, machineSet *machineSetInfo) (worker.MachineDeployment, map[string]interface{}) {
 			var (
 				machineDeployment = worker.MachineDeployment{
 					Minimum:              pool.Minimum,
@@ -214,8 +214,11 @@ func (w *workerDelegate) generateMachineConfig(ctx context.Context) error {
 				machineClassSpec["zone"] = zone.name
 			}
 
-			if availabilitySetID != nil {
-				machineClassSpec["availabilitySetID"] = *availabilitySetID
+			if machineSet != nil {
+				machineClassSpec["machineSet"] = map[string]interface{}{
+					"kind": machineSet.kind,
+					"id":   machineSet.id,
+				}
 			}
 
 			if infrastructureStatus.Identity != nil {
@@ -246,24 +249,45 @@ func (w *workerDelegate) generateMachineConfig(ctx context.Context) error {
 			return machineDeployment, machineClassSpec
 		}
 
-		// Availability Set
-		if !infrastructureStatus.Zoned {
-			machineDeployment, machineClassSpec := generateMachineClassAndDeployment(nil, &nodesAvailabilitySet.ID)
+		// VMO
+		if vmoRequired {
+			machineDeployment, machineClassSpec := generateMachineClassAndDeployment(nil, &machineSetInfo{
+				id:   vmoDependency.ID,
+				kind: "vmo",
+			})
+			machineDeployments = append(machineDeployments, machineDeployment)
+			machineClasses = append(machineClasses, machineClassSpec)
+			continue
+		}
+
+		// AvailabilitySet
+		if !vmoRequired && !infrastructureStatus.Zoned {
+			nodesAvailabilitySet, err := azureapihelper.FindAvailabilitySetByPurpose(infrastructureStatus.AvailabilitySets, azureapi.PurposeNodes)
+			if err != nil {
+				return err
+			}
+
+			// Do not enable accelerated networking for AvSet cluster.
+			// This is necessary to avoid `ExistingAvailabilitySetWasNotDeployedOnAcceleratedNetworkingEnabledCluster` error.
+			acceleratedNetworkAllowed = false
+
+			machineDeployment, machineClassSpec := generateMachineClassAndDeployment(nil, &machineSetInfo{
+				id:   nodesAvailabilitySet.ID,
+				kind: "availabilityset",
+			})
 			machineDeployments = append(machineDeployments, machineDeployment)
 			machineClasses = append(machineClasses, machineClassSpec)
 			continue
 		}
 
 		// Availability Zones
-		zoneCount := len(pool.Zones)
+		var zoneCount = len(pool.Zones)
 		for zoneIndex, zone := range pool.Zones {
-			info := &zoneInfo{
+			machineDeployment, machineClassSpec := generateMachineClassAndDeployment(&zoneInfo{
 				name:  zone,
 				index: int32(zoneIndex),
 				count: int32(zoneCount),
-			}
-
-			machineDeployment, machineClassSpec := generateMachineClassAndDeployment(info, nil)
+			}, nil)
 			machineDeployments = append(machineDeployments, machineDeployment)
 			machineClasses = append(machineClasses, machineClassSpec)
 		}
@@ -360,16 +384,48 @@ func SanitizeAzureVMTag(label string) string {
 	return tagRegex.ReplaceAllString(strings.ToLower(label), "_")
 }
 
-func computeAdditionalHashData(pool extensionsv1alpha1.WorkerPool) []string {
-	var additionalData []string
+func (w *workerDelegate) generateWorkerPoolHash(pool extensionsv1alpha1.WorkerPool, infrastructureStatus *azureapi.InfrastructureStatus, vmoDependency *azureapi.VmoDependency) (string, error) {
+	var additionalHashData = []string{}
 
+	// Integrate data disks/volumes in the hash.
 	for _, dv := range pool.DataVolumes {
-		additionalData = append(additionalData, dv.Size)
+		additionalHashData = append(additionalHashData, dv.Size)
 
 		if dv.Type != nil {
-			additionalData = append(additionalData, *dv.Type)
+			additionalHashData = append(additionalHashData, *dv.Type)
 		}
 	}
 
-	return additionalData
+	// Incorporate the identity ID in the workerpool hash.
+	// Machines need to be rolled when the identity has been exchanged.
+	if infrastructureStatus.Identity != nil {
+		additionalHashData = append(additionalHashData, infrastructureStatus.Identity.ID)
+	}
+
+	// Include the vmo dependency name into the workerpool hash.
+	if vmoDependency != nil {
+		additionalHashData = append(additionalHashData, vmoDependency.Name)
+	}
+
+	// Generate the worker pool hash.
+	workerPoolHash, err := worker.WorkerPoolHash(pool, w.cluster, additionalHashData...)
+	if err != nil {
+		return "", err
+	}
+	return workerPoolHash, nil
+}
+
+func determineWorkerPoolVmoDependency(workerStatus *azureapi.WorkerStatus, poolName string) (*azureapi.VmoDependency, error) {
+	var dependency *azureapi.VmoDependency
+	for _, dep := range workerStatus.VmoDependencies {
+		if dep.PoolName != poolName {
+			continue
+		}
+		if dependency != nil {
+			return nil, fmt.Errorf("Found more then one vmo dependencies for workerpool %s in the worker provider status", poolName)
+		}
+		runVariableTmp := dep
+		dependency = &runVariableTmp
+	}
+	return dependency, nil
 }

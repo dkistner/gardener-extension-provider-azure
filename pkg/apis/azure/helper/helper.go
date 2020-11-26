@@ -115,3 +115,11 @@ func FindImageFromCloudProfile(cloudProfileConfig *api.CloudProfileConfig, image
 
 	return nil, fmt.Errorf("could not find an image for name %q in version %q", imageName, imageVersion)
 }
+
+// IsVMORequired determines if VMO is required.
+func IsVMORequired(infrastructureStatus *api.InfrastructureStatus) bool {
+	if infrastructureStatus.Zoned || len(infrastructureStatus.AvailabilitySets) > 0 {
+		return false
+	}
+	return true
+}

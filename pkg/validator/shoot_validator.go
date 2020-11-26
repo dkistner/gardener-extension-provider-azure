@@ -25,6 +25,7 @@ import (
 )
 
 var (
+	metaDataPath    = field.NewPath("metadata")
 	specPath        = field.NewPath("spec")
 	nwPath          = specPath.Child("networking")
 	providerPath    = specPath.Child("provider")
@@ -46,7 +47,7 @@ func (v *Shoot) validateShoot(shoot *core.Shoot, infraConfig *azure.Infrastructu
 	allErrs = append(allErrs, azurevalidation.ValidateNetworking(shoot.Spec.Networking, nwPath)...)
 
 	// Provider validation
-	allErrs = append(allErrs, azurevalidation.ValidateInfrastructureConfig(infraConfig, shoot.Spec.Networking.Nodes, shoot.Spec.Networking.Pods, shoot.Spec.Networking.Services, infraConfigPath)...)
+	allErrs = append(allErrs, azurevalidation.ValidateInfrastructureConfig(infraConfig, shoot.Spec.Networking.Nodes, shoot.Spec.Networking.Pods, shoot.Spec.Networking.Services, shoot.Annotations, infraConfigPath)...)
 
 	// Shoot workers
 	allErrs = append(allErrs, azurevalidation.ValidateWorkers(shoot.Spec.Provider.Workers, infraConfig.Zoned, workersPath)...)
@@ -61,7 +62,7 @@ func (v *Shoot) validateShootUpdate(oldShoot, shoot *core.Shoot) error {
 		return err
 	}
 
-	oldInfraConfig, err := checkAndDecodeInfrastructureConfig(v.decoder, shoot.Spec.Provider.InfrastructureConfig, infraConfigPath)
+	oldInfraConfig, err := checkAndDecodeInfrastructureConfig(v.decoder, oldShoot.Spec.Provider.InfrastructureConfig, infraConfigPath)
 	if err != nil {
 		return err
 	}
@@ -69,8 +70,11 @@ func (v *Shoot) validateShootUpdate(oldShoot, shoot *core.Shoot) error {
 	allErrs := field.ErrorList{}
 
 	if !reflect.DeepEqual(oldInfraConfig, infraConfig) {
-		allErrs = append(allErrs, azurevalidation.ValidateInfrastructureConfigUpdate(oldInfraConfig, infraConfig, infraConfigPath)...)
+		allErrs = append(allErrs, azurevalidation.ValidateInfrastructureConfigUpdate(oldInfraConfig, infraConfig, metaDataPath)...)
 	}
+
+	// TODO(dkistner) This can be removed when VMO is not longer in alpha state and can be configured via the regular Shoot spec.
+	allErrs = append(allErrs, azurevalidation.ValidateVMOConfigurationUpdate(oldInfraConfig, infraConfig, oldShoot.Annotations, shoot.Annotations, infraConfigPath, metaDataPath)...)
 
 	allErrs = append(allErrs, azurevalidation.ValidateWorkersUpdate(oldShoot.Spec.Provider.Workers, shoot.Spec.Provider.Workers, workersPath)...)
 

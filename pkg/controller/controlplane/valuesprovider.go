@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	apisazure "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
+	"github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	azureapihelper "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure/helper"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/azure"
 	"github.com/gardener/gardener-extension-provider-azure/pkg/internal"
@@ -343,11 +344,7 @@ type valuesProvider struct {
 }
 
 // GetConfigChartValues returns the values for the config chart applied by the generic actuator.
-func (vp *valuesProvider) GetConfigChartValues(
-	ctx context.Context,
-	cp *extensionsv1alpha1.ControlPlane,
-	cluster *extensionscontroller.Cluster,
-) (map[string]interface{}, error) {
+func (vp *valuesProvider) GetConfigChartValues(ctx context.Context, cp *extensionsv1alpha1.ControlPlane, cluster *extensionscontroller.Cluster) (map[string]interface{}, error) {
 	// Decode providerConfig
 	cpConfig := &apisazure.ControlPlaneConfig{}
 	if cp.Spec.ProviderConfig != nil {
@@ -466,12 +463,7 @@ func (vp *valuesProvider) removeAcrConfig(ctx context.Context, namespace string)
 }
 
 // getConfigChartValues collects and returns the configuration chart values.
-func getConfigChartValues(
-	infraStatus *apisazure.InfrastructureStatus,
-	cp *extensionsv1alpha1.ControlPlane,
-	cluster *extensionscontroller.Cluster,
-	ca *internal.ClientAuth,
-) (map[string]interface{}, error) {
+func getConfigChartValues(infraStatus *apisazure.InfrastructureStatus, cp *extensionsv1alpha1.ControlPlane, cluster *extensionscontroller.Cluster, ca *internal.ClientAuth) (map[string]interface{}, error) {
 	subnetName, routeTableName, securityGroupName, err := getInfraNames(infraStatus)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not determine subnet, availability set, route table or security group name from infrastructureStatus of controlplane '%s'", kutil.ObjectName(cp))
@@ -502,13 +494,13 @@ func getConfigChartValues(
 		values["vnetResourceGroup"] = *infraStatus.Networks.VNet.ResourceGroup
 	}
 
-	// Add AvailabilitySet config if the cluster is not zoned.
-	if !infraStatus.Zoned {
-		nodesAvailabilitySet, err := azureapihelper.FindAvailabilitySetByPurpose(infraStatus.AvailabilitySets, apisazure.PurposeNodes)
-		if err != nil {
-			return nil, errors.Wrapf(err, "could not determine availability set for purpose 'nodes'")
-		}
-		values["availabilitySetName"] = nodesAvailabilitySet.Name
+	primaryAvailabilitySet, err := helper.FindAvailabilitySetByPurpose(infraStatus.AvailabilitySets, apisazure.PurposeNodes)
+	if err == nil {
+		values["availabilitySetName"] = primaryAvailabilitySet.Name
+	}
+
+	if helper.IsVMORequired(infraStatus) {
+		values["vmType"] = "vmss"
 	}
 
 	if infraStatus.Identity != nil && infraStatus.Identity.ACRAccess {

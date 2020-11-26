@@ -11,22 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//go:generate mockgen -package vmss -destination=mocks.go github.com/gardener/gardener-extension-provider-azure/pkg/azure/client Vmss
 
-package internal
-
-import (
-	"net/http"
-
-	"github.com/Azure/go-autorest/autorest"
-)
-
-// AzureAPIErrorNotFound tries to determine if an error is a resource not found error.
-func AzureAPIErrorNotFound(err error) bool {
-	switch e := err.(type) {
-	case autorest.DetailedError:
-		if e.Response != nil && e.Response.StatusCode == http.StatusNotFound {
-			return true
-		}
-	}
-	return false
-}
+package vmss

@@ -60,5 +60,5 @@ func (a *actuator) reconcile(ctx context.Context, infra *extensionsv1alpha1.Infr
 		return errors.Wrap(err, "failed to apply the terraform config")
 	}
 
-	return a.updateProviderStatus(ctx, tf, infra, config)
+	return a.updateProviderStatus(ctx, tf, infra, config, cluster)
 }
