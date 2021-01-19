@@ -15,6 +15,8 @@
 package validation
 
 import (
+	"fmt"
+
 	apisazure "github.com/gardener/gardener-extension-provider-azure/pkg/apis/azure"
 	cidrvalidation "github.com/gardener/gardener/pkg/utils/validation/cidr"
 	apivalidation "k8s.io/apimachinery/pkg/api/validation"
@@ -61,34 +63,66 @@ func ValidateInfrastructureConfig(infra *apisazure.InfrastructureConfig, nodesCI
 	workerCIDR := cidrvalidation.NewCIDR(infra.Networks.Workers, networksPath.Child("workers"))
 	allErrs = append(allErrs, cidrvalidation.ValidateCIDRParse(workerCIDR)...)
 	allErrs = append(allErrs, cidrvalidation.ValidateCIDRIsCanonical(networksPath.Child("workers"), infra.Networks.Workers)...)
+	if nodes != nil {
+		allErrs = append(allErrs, nodes.ValidateSubset(workerCIDR)...)
+	}
 
-	// Validate vnet config
 	allErrs = append(allErrs, validateVnetConfig(infra.Networks.VNet, infra.ResourceGroup, workerCIDR, nodes, pods, services, networksPath.Child("vnet"))...)
-
-	// TODO(dkistner) Remove once we proceed with multiple AvailabilitySet support.
-	// Currently we will not offer Nat Gateway for non zoned/AvailabilitySet based
-	// clusters as the NatGateway is not compatible with Basic LoadBalancer and
-	// we would need Standard LoadBalancers also in combination with AvailabilitySets.
-	// For the multiple AvailabilitySet approach we would always need
-	// a Standard LoadBalancer and a NatGateway.
-	if !infra.Zoned && infra.Networks.NatGateway != nil {
-		allErrs = append(allErrs, field.Invalid(fldPath.Child("networks", "natGateway"), infra.Networks.NatGateway, "NatGateway is currently only supported for zoned cluster"))
-	}
-
-	if infra.Networks.NatGateway != nil &&
-		infra.Networks.NatGateway.IdleConnectionTimeoutMinutes != nil &&
-		(*infra.Networks.NatGateway.IdleConnectionTimeoutMinutes < natGatewayMinTimeoutInMinutes || *infra.Networks.NatGateway.IdleConnectionTimeoutMinutes > natGatewayMaxTimeoutInMinutes) {
-		allErrs = append(allErrs, field.Invalid(fldPath.Child("networks", "natGateway", "idleConnectionTimeoutMinutes"), *infra.Networks.NatGateway.IdleConnectionTimeoutMinutes, "idleConnectionTimeoutMinutes values must range between 4 and 120"))
-	}
+	allErrs = append(allErrs, validateNatGatewayConfig(infra.Networks.NatGateway, infra.Zoned, networksPath.Child("natGateway"))...)
 
 	if infra.Identity != nil && (infra.Identity.Name == "" || infra.Identity.ResourceGroup == "") {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("identity"), infra.Identity, "specifying an identity requires the name of the identity and the resource group which hosts the identity"))
 	}
 
-	if nodes != nil {
-		allErrs = append(allErrs, nodes.ValidateSubset(workerCIDR)...)
+	return allErrs
+}
+
+func validateNatGatewayConfig(natGatewayConfig *apisazure.NatGatewayConfig, zoned bool, natGatewayPath *field.Path) field.ErrorList {
+	var allErrs = field.ErrorList{}
+
+	if natGatewayConfig == nil {
+		return nil
 	}
 
+	if !natGatewayConfig.Enabled {
+		if natGatewayConfig.Zone != nil || natGatewayConfig.IdleConnectionTimeoutMinutes != nil || natGatewayConfig.IPAddresses != nil {
+			return append(allErrs, field.Invalid(natGatewayPath, natGatewayConfig, "NatGateway is disabled but additional NatGateway config is passed"))
+		}
+		return nil
+	}
+
+	if !zoned {
+		return append(allErrs, field.Forbidden(natGatewayPath, "NatGateway is currently only supported for zoned cluster"))
+	}
+
+	if natGatewayConfig.IdleConnectionTimeoutMinutes != nil && (*natGatewayConfig.IdleConnectionTimeoutMinutes < natGatewayMinTimeoutInMinutes || *natGatewayConfig.IdleConnectionTimeoutMinutes > natGatewayMaxTimeoutInMinutes) {
+		allErrs = append(allErrs, field.Invalid(natGatewayPath.Child("idleConnectionTimeoutMinutes"), *natGatewayConfig.IdleConnectionTimeoutMinutes, "idleConnectionTimeoutMinutes values must range between 4 and 120"))
+	}
+
+	if natGatewayConfig.Zone == nil {
+		if len(natGatewayConfig.IPAddresses) > 0 {
+			allErrs = append(allErrs, field.Invalid(natGatewayPath.Child("zone"), *natGatewayConfig, "Public IPs can only be selected for zonal NatGateways"))
+		}
+		return allErrs
+	}
+	allErrs = append(allErrs, validateNatGatewayIPReference(natGatewayConfig.IPAddresses, *natGatewayConfig.Zone, natGatewayPath.Child("ipAddresses"))...)
+
+	return allErrs
+}
+
+func validateNatGatewayIPReference(references []apisazure.PublicIPReference, zone int32, fldPath *field.Path) field.ErrorList {
+	var allErrs = field.ErrorList{}
+	for i, ref := range references {
+		if ref.Zone != zone {
+			allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("zone"), ref.Zone, fmt.Sprintf("Public IP can't be used as it is not the same zone as the NatGateway (zone %d)", zone)))
+		}
+		if ref.Name == "" {
+			allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("name"), ref.Name, "Empty name for NatGateway public IP is invalid"))
+		}
+		if ref.ResourceGroup == "" {
+			allErrs = append(allErrs, field.Invalid(fldPath.Index(i).Child("resourceGroup"), ref.ResourceGroup, "Empty resourceGroup for NatGateway public IP is invalid"))
+		}
+	}
 	return allErrs
 }
 
